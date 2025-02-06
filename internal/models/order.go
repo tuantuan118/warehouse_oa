@@ -18,10 +18,12 @@ type Order struct {
 	Customer        *Customer           `gorm:"foreignKey:CustomerId" json:"customer"`
 	Salesman        string              `gorm:"type:varchar(256)" json:"salesman"`
 	Images          string              `gorm:"type:text" json:"images"`
-	ImageList       []string            `gorm:"-" json:"imageList"`
 	UserList        []User              `gorm:"many2many:order_user;" json:"userList"`
 	Ingredient      []AddIngredient     `gorm:"foreignKey:OrderID;references:ID" json:"ingredient"`
+	ImageList       []string            `gorm:"-" json:"imageList"`
 	FinishPriceList []map[string]string `gorm:"-" json:"finishPriceList"`
+	Profit          float64             `gorm:"-" json:"profit"`
+	GrossMargin     float64             `gorm:"-" json:"grossMargin"`
 }
 
 type AddIngredient struct {

@@ -100,15 +100,21 @@ func (*InBound) delete(c *gin.Context) {
 }
 
 func (*InBound) finishInBound(c *gin.Context) {
-	order := &models.IngredientInBound{}
-	if err := c.ShouldBindJSON(order); err != nil {
+	inBound := struct {
+		ID          int     `form:"id" json:"id" binding:"required"`
+		TotalPrice  float64 `json:"totalPrice"`
+		PaymentTime string  `json:"paymentTime"`
+		Operator    string  `json:"operator"`
+	}{}
+
+	if err := c.ShouldBindJSON(&inBound); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	order.Operator = c.GetString("userName")
-	data, err := service.FinishInBound(order.ID, order.TotalPrice)
+	inBound.Operator = c.GetString("userName")
+	data, err := service.FinishInBound(inBound.ID, inBound.TotalPrice, inBound.PaymentTime, inBound.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

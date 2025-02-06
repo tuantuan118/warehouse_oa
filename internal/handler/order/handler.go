@@ -2,6 +2,7 @@ package order
 
 import (
 	"github.com/gin-gonic/gin"
+	"net/http"
 	"warehouse_oa/internal/handler"
 	"warehouse_oa/internal/models"
 	"warehouse_oa/internal/service"
@@ -18,6 +19,7 @@ func InitOrderRouter(router *gin.RouterGroup) {
 	orderRouter.GET("list", o.list)
 	orderRouter.GET("fields", o.fields)
 	orderRouter.GET("export", o.export)
+	orderRouter.GET("exportExecl", o.exportExecl)
 	orderRouter.POST("add", o.add)
 	orderRouter.POST("update", o.update)
 	orderRouter.POST("finishOrder", o.finishOrder)
@@ -86,15 +88,21 @@ func (*Order) update(c *gin.Context) {
 }
 
 func (*Order) finishOrder(c *gin.Context) {
-	order := &models.Order{}
-	if err := c.ShouldBindJSON(order); err != nil {
+	order := struct {
+		ID          int     `form:"id" json:"id" binding:"required"`
+		TotalPrice  float64 `json:"totalPrice"`
+		PaymentTime string  `json:"paymentTime"`
+		Operator    string  `json:"operator"`
+	}{}
+
+	if err := c.ShouldBindJSON(&order); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
 	order.Operator = c.GetString("userName")
-	data, err := service.FinishOrder(order.ID, order.TotalPrice)
+	data, err := service.FinishOrder(order.ID, order.TotalPrice, order.PaymentTime, order.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -191,4 +199,35 @@ func (*Order) fields(c *gin.Context) {
 	}
 
 	handler.Success(c, data)
+}
+
+func (*Order) exportExecl(c *gin.Context) {
+	pn, pSize := utils.ParsePaginationParams(c)
+	order := &models.Order{
+		Name:          c.DefaultQuery("name", ""),
+		OrderNumber:   c.DefaultQuery("orderNumber", ""),
+		Specification: c.DefaultQuery("specification", ""),
+		Salesman:      c.DefaultQuery("salesman", ""),
+		Status:        utils.DefaultQueryInt(c, "status", 0),
+	}
+	customerStr := c.DefaultQuery("customerId", "")
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+	userId := c.GetInt("userId")
+
+	data, err := service.ExportOrderExecl(order, customerStr, begTime, endTime, pn, pSize, userId)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", `attachment; filename="配料入库.xlsx"`)
+	c.Header("Content-Transfer-Encoding", "binary")
+
+	// 将 Excel 文件写入到 HTTP 响应中
+	if err = data.Write(c.Writer); err != nil {
+		c.String(http.StatusInternalServerError, "文件生成失败")
+		return
+	}
 }

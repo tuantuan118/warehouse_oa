@@ -15,7 +15,9 @@ import (
 	"warehouse_oa/utils"
 )
 
-func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn, pSize int, userId int) (interface{}, error) {
+func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn, pSize int, userId int) (
+	interface{}, error) {
+
 	db := global.Db.Model(&models.Order{})
 
 	if order.OrderNumber != "" {
@@ -89,6 +91,8 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 				"price": fp[1],
 			})
 		}
+		data[n].Profit = data[n].TotalPrice - data[n].Cost
+		data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
 	}
 
 	return map[string]interface{}{
@@ -231,7 +235,7 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 	return order, global.Db.Updates(&order).Error
 }
 
-func FinishOrder(id int, totalPrice float64) (*models.Order, error) {
+func FinishOrder(id int, totalPrice float64, paymentTime, operator string) (*models.Order, error) {
 	if id == 0 {
 		return nil, errors.New("id is 0")
 	}
@@ -247,7 +251,7 @@ func FinishOrder(id int, totalPrice float64) (*models.Order, error) {
 	data.UnFinishPrice = data.UnFinishPrice - totalPrice
 	data.FinishPrice += totalPrice
 
-	str := fmt.Sprintf("%s&%f;", time.Now().Format("2006-01-02 15:04:05"), totalPrice)
+	str := fmt.Sprintf("%s&%f;", paymentTime, totalPrice)
 	data.FinishPriceStr += str
 
 	if data.UnFinishPrice > 0 {
@@ -255,9 +259,10 @@ func FinishOrder(id int, totalPrice float64) (*models.Order, error) {
 	} else {
 		data.Status = 3
 	}
+	data.Operator = operator
 
 	return data, global.Db.Select("UnFinishPrice",
-		"FinishPrice", "FinishPriceStr",
+		"FinishPrice", "FinishPriceStr", "Operator",
 		"Status").Updates(&data).Error
 }
 func VoidOrder(id int, username string) error {
@@ -456,7 +461,7 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	if err := f.SetCellValue("Sheet1", "F10", F10); err != nil {
 		return nil, err
 	}
-	G10 := fmt.Sprintf("¥%0.2f", data.Price)
+	G10 := fmt.Sprintf("¥%0.2f", data.TotalPrice)
 	if err := f.SetCellValue("Sheet1", "G10", G10); err != nil {
 		return nil, err
 	}
@@ -557,4 +562,178 @@ func GetOrderByCustomer(customerId int) error {
 	}
 
 	return err
+}
+
+func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string, pn, pSize int, userId int) (
+	*excelize.File, error) {
+
+	db := global.Db.Model(&models.Order{})
+	totalDb := global.Db.Model(&models.Order{})
+
+	if order.OrderNumber != "" {
+		slice := strings.Split(order.OrderNumber, ";")
+		db = db.Where("order_number in ?", slice)
+		totalDb = totalDb.Where("order_number in ?", slice)
+	}
+	if order.Name != "" {
+		slice := strings.Split(order.Name, ";")
+		db = db.Where("name in ?", slice)
+		totalDb = totalDb.Where("name in ?", slice)
+	}
+	if order.Specification != "" {
+		db = db.Where("specification = ?", order.Specification)
+		totalDb = totalDb.Where("specification = ?", order.Specification)
+	}
+	if order.Salesman != "" {
+		slice := strings.Split(order.Salesman, ";")
+		db = db.Where("salesman in ?", slice)
+		totalDb = totalDb.Where("salesman in ?", slice)
+	}
+	if customerStr != "" {
+		slice := strings.Split(customerStr, ";")
+		db = db.Where("customer_id in ?", slice)
+		totalDb = totalDb.Where("customer_id in ?", slice)
+	}
+	if order.Status != 0 {
+		db = db.Where("status = ?", order.Status)
+		totalDb = totalDb.Where("status = ?", order.Status)
+	}
+	if begTime != "" && endTime != "" {
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+	db = db.Preload("UserList")
+	db = db.Preload("Customer")
+	db = db.Preload("Ingredient")
+
+	b, err := getAdmin(userId)
+	if err != nil {
+		return nil, err
+	}
+	if !b {
+		db = db.Where(" id in (select order_id from tb_order_user where user_id = ?)", userId)
+		totalDb = totalDb.Where(" id in (select order_id from tb_order_user where user_id = ?)", userId)
+	}
+
+	var totalPrice float64
+	err = totalDb.Select("COALESCE(SUM(total_price), 0)").Scan(&totalPrice).Error
+	if err != nil {
+		return nil, err
+	}
+	var unFinishPrice float64
+	if err = totalDb.Select("COALESCE(SUM(un_finish_price), 0)").Scan(&unFinishPrice).Error; err != nil {
+		return nil, err
+	}
+	var finishPrice float64
+	if err = totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
+		return nil, err
+	}
+	var consumeCost float64
+	if err = totalDb.Select("SUM(cost)").Scan(&consumeCost).Error; err != nil {
+		return nil, err
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	if pn != 0 && pSize != 0 {
+		offset := (pn - 1) * pSize
+		db = db.Order("id desc").Limit(pSize).Offset(offset)
+	}
+
+	data := make([]models.Order, 0)
+	err = db.Find(&data).Error
+
+	for n := range data {
+		data[n].ImageList = make([]string, 0)
+		if data[n].Images != "" {
+			data[n].ImageList = strings.Split(data[n].Images, ";")
+		}
+
+		if data[n].FinishPriceStr == "" {
+			continue
+		}
+		data[n].FinishPriceList = make([]map[string]string, 0)
+		fpl := strings.Split(data[n].FinishPriceStr, ";")
+		for _, f := range fpl {
+			fp := strings.Split(f, "&")
+			if len(fp) != 2 {
+				continue
+			}
+			data[n].FinishPriceList = append(data[n].FinishPriceList, map[string]string{
+				"time":  fp[0],
+				"price": fp[1],
+			})
+		}
+		data[n].Profit = data[n].TotalPrice - data[n].Cost
+		data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
+	}
+
+	keyList := []string{
+		"订单编号",
+		"产品名称",
+		"产品规格",
+		"单价（元）",
+		"数量",
+		"订单金额",
+		"已结金额",
+		"未结金额",
+		"成本",
+		"利润",
+		"毛利率",
+		"订单状态",
+		"客户名称",
+		"订单分配",
+		"销售人员",
+		"备注",
+		"更新人员",
+		"更新时间",
+	}
+
+	valueList := make([]map[string]interface{}, 0)
+	for _, v := range data {
+		valueList = append(valueList, map[string]interface{}{
+			"订单编号": v.OrderNumber,
+			"产品名称": v.Name,
+			"产品规格": v.Specification,
+			"单价（元）": v.Price,
+			"数量":     v.Amount,
+			"订单金额": v.TotalPrice,
+			"已结金额": v.FinishPrice,
+			"未结金额": v.UnFinishPrice,
+			"成本":     v.Cost,
+			"利润":     v.Profit,
+			"毛利率":   v.GrossMargin,
+			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
+			"客户名称": v.Customer.Name,
+			"销售人员": v.Salesman,
+			"备注":     v.Remark,
+			"更新人员": v.Operator,
+			"更新时间": v.UpdatedAt,
+		})
+	}
+	valueList = append(valueList, map[string]interface{}{
+		"订单金额": totalPrice,
+		"已结金额": finishPrice,
+		"未结金额": unFinishPrice,
+		"成本":     consumeCost,
+	})
+
+	return utils.ExportExcel(keyList, valueList)
+}
+
+func returnStatus(i int) string {
+	switch i {
+	case 1:
+		return "待出库"
+	case 2:
+		return "未完成支付"
+	case 3:
+		return "已支付"
+	case 4:
+		return "作废"
+	}
+	return ""
 }

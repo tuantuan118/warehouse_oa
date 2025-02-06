@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 	"math/big"
 	"strings"
-	"time"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 	"warehouse_oa/utils"
@@ -60,6 +59,10 @@ func GetInBoundList(name, supplier, stockUser, stockUnit, begTime, endTime strin
 	if err := totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
 		return nil, err
 	}
+	var consumeCost float64
+	if err := totalDb.Select("SUM(cost)").Scan(&consumeCost).Error; err != nil {
+		return nil, err
+	}
 
 	if b {
 		db = db.Where("in_and_out = ?", b)
@@ -108,6 +111,7 @@ func GetInBoundList(name, supplier, stockUser, stockUnit, begTime, endTime strin
 		"sumTotalPrice":    totalPrice,
 		"sumUnFinishPrice": unFinishPrice,
 		"sumFinishPrice":   finishPrice,
+		"consumeCost":      consumeCost,
 	}, err
 
 }
@@ -276,6 +280,18 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 	if err != nil {
 		return nil, err
 	}
+	var unFinishPrice float64
+	if err = totalDb.Select("COALESCE(SUM(un_finish_price), 0)").Scan(&unFinishPrice).Error; err != nil {
+		return nil, err
+	}
+	var finishPrice float64
+	if err = totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
+		return nil, err
+	}
+	var consumeCost float64
+	if err = totalDb.Select("SUM(cost)").Scan(&consumeCost).Error; err != nil {
+		return nil, err
+	}
 
 	data := make([]models.IngredientInBound, 0)
 	err = db.Preload("Ingredient").Find(&data).Error
@@ -290,6 +306,9 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 		"单价（元）",
 		"金额（元）",
 		"采购金额",
+		"已结金额",
+		"未结金额",
+		"成本",
 		"入库数量",
 		"入库人员",
 		"入库时间",
@@ -305,6 +324,9 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 			"单价（元）": v.Price,
 			"金额（元）": v.TotalPrice,
 			"采购金额":  v.Price * v.StockNum,
+			"已结金额":  v.FinishPrice,
+			"未结金额":  v.UnFinishPrice,
+			"成本":    v.Cost,
 			"入库数量":  fmt.Sprintf("%f%s", v.StockNum, returnUnit(v.StockUnit)),
 			"入库人员":  v.StockUser,
 			"入库时间":  v.StockTime,
@@ -313,6 +335,9 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 	}
 	valueList = append(valueList, map[string]interface{}{
 		"金额（元）": totalPrice,
+		"已结金额":  finishPrice,
+		"未结金额":  unFinishPrice,
+		"成本":    consumeCost,
 	})
 
 	return utils.ExportExcel(keyList, valueList)
@@ -373,8 +398,13 @@ func UpdateInBoundBalance(tx *gorm.DB, inventory *models.IngredientInventory, pn
 	if err != nil {
 		return 0, err
 	}
+	if len(data) == 0 {
+		return 0, nil
+	}
 
-	for _, d := range data {
+	for n, _ := range data {
+		d := &data[n]
+
 		if amount >= d.Balance {
 			cost = cost + d.Price*d.Balance
 			amount = amount - d.Balance
@@ -384,12 +414,15 @@ func UpdateInBoundBalance(tx *gorm.DB, inventory *models.IngredientInventory, pn
 			d.Balance = d.Balance - amount
 			amount = 0
 		}
-		err = tx.Updates(&d).Error
+
+		err = tx.Model(&models.IngredientInBound{}).
+			Where("id = ?", d.ID).
+			Update("balance", d.Balance).Error
 		if err != nil {
 			return 0, err
 		}
 		if amount == 0 {
-			break
+			continue
 		}
 	}
 	if amount > 0 {
@@ -430,7 +463,7 @@ func GetOutInBoundList(id int, supplier, stockUser, begTime, endTime string,
 	)
 }
 
-func FinishInBound(id int, totalPrice float64) (*models.IngredientInBound, error) {
+func FinishInBound(id int, totalPrice float64, paymentTime, operator string) (*models.IngredientInBound, error) {
 	if id == 0 {
 		return nil, errors.New("id is 0")
 	}
@@ -446,7 +479,7 @@ func FinishInBound(id int, totalPrice float64) (*models.IngredientInBound, error
 	data.UnFinishPrice = data.UnFinishPrice - totalPrice
 	data.FinishPrice += totalPrice
 
-	str := fmt.Sprintf("%s&%f;", time.Now().Format("2006-01-02 15:04:05"), totalPrice)
+	str := fmt.Sprintf("%s&%f;", paymentTime, totalPrice)
 	data.FinishPriceStr += str
 
 	if data.UnFinishPrice > 0 {
@@ -454,9 +487,10 @@ func FinishInBound(id int, totalPrice float64) (*models.IngredientInBound, error
 	} else {
 		data.Status = 1
 	}
+	data.Operator = operator
 
 	return data, global.Db.Select("UnFinishPrice",
-		"FinishPrice", "FinishPriceStr",
+		"FinishPrice", "FinishPriceStr", "Operator",
 		"Status").Updates(&data).Error
 }
 

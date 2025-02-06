@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"strings"
 	"time"
@@ -109,9 +110,10 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 	}
 
 	// 扣除配料库存
-	var cost float64
+	var sumCost float64
 	for _, material := range finishedManage.Material {
 		amount := material.Quantity * float64(finished.ExpectAmount)
+		var cost float64
 		cost, err = UpdateInBoundBalance(tx, material.IngredientInventory, 1, amount)
 		if err != nil {
 			return nil, err
@@ -122,7 +124,7 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 				Operator: finished.Operator,
 			},
 			IngredientID:     material.IngredientInventory.IngredientID,
-			StockNum:         0 - amount,
+			StockNum:         0 - material.Quantity*float64(finished.ExpectAmount),
 			StockUnit:        material.IngredientInventory.StockUnit,
 			StockUser:        finished.Operator,
 			StockTime:        time.Now(),
@@ -133,13 +135,15 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 		if err != nil {
 			return nil, err
 		}
+		sumCost += cost
 	}
 
 	finished.Balance = finished.ActualAmount
-	finished.Cost = cost
-	finished.Price = finished.Cost / float64(finished.ActualAmount)
-	err = tx.Model(&models.Finished{}).Create(finished).Error
+	finished.Cost = sumCost
+	finished.Price = 0
+	err = tx.Model(&models.Finished{}).Create(&finished).Error
 	if err != nil {
+		logrus.Info(err)
 		return nil, err
 	}
 
@@ -272,6 +276,8 @@ func FinishFinished(id, amount int, username string) error {
 	ft := time.Now()
 	data.FinishTime = &ft
 	data.OperationDetails = fmt.Sprintf("生产完工")
+	data.Balance = data.ActualAmount
+	data.Price = data.Cost / float64(data.ActualAmount)
 
 	err = SaveFinishedStockByInBound(tx, data)
 	if err != nil {
@@ -400,8 +406,12 @@ func UpdateFinishedBalance(tx *gorm.DB, finishedId, pn int,
 	if err != nil {
 		return 0, err
 	}
+	if len(data) == 0 {
+		return 0, nil
+	}
 
-	for _, d := range data {
+	for n, _ := range data {
+		d := data[n]
 		if amount >= d.Balance {
 			cost = cost + d.Price*float64(d.Balance)
 			amount = amount - d.Balance
@@ -411,7 +421,9 @@ func UpdateFinishedBalance(tx *gorm.DB, finishedId, pn int,
 			d.Balance = d.Balance - amount
 			amount = 0
 		}
-		err = tx.Updates(&d).Error
+		err = tx.Model(&models.Finished{}).
+			Where("id = ?", d.ID).
+			Update("balance", d.Balance).Error
 		if err != nil {
 			return 0, err
 		}
