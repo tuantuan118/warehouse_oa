@@ -109,7 +109,7 @@ func GetOrderById(id int) (*models.Order, error) {
 	data := &models.Order{}
 	db = db.Preload("UserList")
 	db = db.Preload("Customer")
-	db = db.Preload("Ingredient.IngredientInventory")
+	db = db.Preload("Ingredient.IngredientStock")
 	err := db.Where("id = ?", id).First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("user does not exist")
@@ -135,12 +135,12 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 	order.Images = strings.Join(order.ImageList, ";")
 
 	for _, ingredient := range order.Ingredient {
-		inventory := new(models.IngredientInventory)
-		inventory, err = GetInventoryById(ingredient.IngredientID)
+		stock := new(models.IngredientStock)
+		stock, err = GetStockById(ingredient.IngredientId)
 		if err != nil {
 			return nil, err
 		}
-		ingredient.IngredientInventory = inventory
+		ingredient.IngredientStock = stock
 	}
 
 	productData, err := GetProductById(order.ProductId)
@@ -196,13 +196,13 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 	order.Images = strings.Join(order.ImageList, ";")
 
 	for _, ingredient := range order.Ingredient {
-		inventory := new(models.IngredientInventory)
-		inventory, err = GetInventoryById(ingredient.IngredientID)
+		stock := new(models.IngredientStock)
+		stock, err = GetStockById(ingredient.IngredientId)
 		if err != nil {
 			return nil, err
 		}
 		ingredient.OrderID = order.ID
-		ingredient.IngredientInventory = inventory
+		ingredient.IngredientStock = stock
 	}
 
 	customer, err := GetCustomerById(order.CustomerId)
@@ -360,9 +360,9 @@ func SaveOutBound(id int, username string) error {
 
 	for _, i := range data.Ingredient {
 		logrus.Infoln(i)
-		inventoryAmount := float64(i.Quantity)
+		stockAmount := float64(i.Quantity)
 		var inBoundCost float64
-		inBoundCost, err = UpdateInBoundBalance(tx, i.IngredientInventory, 1, inventoryAmount)
+		inBoundCost, err = UpdateInBoundBalance(tx, i.IngredientStock, 1, stockAmount)
 		if err != nil {
 			return err
 		}
@@ -371,9 +371,9 @@ func SaveOutBound(id int, username string) error {
 			BaseModel: models.BaseModel{
 				Operator: username,
 			},
-			IngredientID:     i.IngredientInventory.IngredientID,
+			IngredientId:     i.IngredientStock.IngredientId,
 			StockNum:         float64(0 - i.Quantity),
-			StockUnit:        i.IngredientInventory.StockUnit,
+			StockUnit:        i.IngredientStock.StockUnit,
 			StockUser:        username,
 			StockTime:        time.Now(),
 			OperationType:    "出库",
@@ -695,30 +695,30 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 	valueList := make([]map[string]interface{}, 0)
 	for _, v := range data {
 		valueList = append(valueList, map[string]interface{}{
-			"订单编号": v.OrderNumber,
-			"产品名称": v.Name,
-			"产品规格": v.Specification,
+			"订单编号":  v.OrderNumber,
+			"产品名称":  v.Name,
+			"产品规格":  v.Specification,
 			"单价（元）": v.Price,
-			"数量":     v.Amount,
-			"订单金额": v.TotalPrice,
-			"已结金额": v.FinishPrice,
-			"未结金额": v.UnFinishPrice,
-			"成本":     v.Cost,
-			"利润":     v.Profit,
+			"数量":    v.Amount,
+			"订单金额":  v.TotalPrice,
+			"已结金额":  v.FinishPrice,
+			"未结金额":  v.UnFinishPrice,
+			"成本":    v.Cost,
+			"利润":    v.Profit,
 			"毛利率":   v.GrossMargin,
-			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
-			"客户名称": v.Customer.Name,
-			"销售人员": v.Salesman,
-			"备注":     v.Remark,
-			"更新人员": v.Operator,
-			"更新时间": v.UpdatedAt,
+			"订单状态":  fmt.Sprintf("%s", returnStatus(v.Status)),
+			"客户名称":  v.Customer.Name,
+			"销售人员":  v.Salesman,
+			"备注":    v.Remark,
+			"更新人员":  v.Operator,
+			"更新时间":  v.UpdatedAt,
 		})
 	}
 	valueList = append(valueList, map[string]interface{}{
 		"订单金额": totalPrice,
 		"已结金额": finishPrice,
 		"未结金额": unFinishPrice,
-		"成本":     consumeCost,
+		"成本":   consumeCost,
 	})
 
 	return utils.ExportExcel(keyList, valueList)

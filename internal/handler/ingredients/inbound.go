@@ -29,14 +29,12 @@ func InitInBoundRouter(router *gin.RouterGroup) {
 func (*InBound) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	name := c.DefaultQuery("name", "")
-	supplier := c.DefaultQuery("supplier", "")
-	stockUser := c.DefaultQuery("stockUser", "")
 	stockUnit := c.DefaultQuery("stockUnit", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.GetInBoundList(name, supplier, stockUser, stockUnit,
-		begTime, endTime, pn, pSize, true)
+	data, err := service.GetInBoundList(name, stockUnit,
+		begTime, endTime, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -150,12 +148,10 @@ func (*InBound) export(c *gin.Context) {
 func (*InBound) outList(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	id := utils.DefaultQueryInt(c, "id", 0)
-	supplier := c.DefaultQuery("supplier", "")
-	stockUser := c.DefaultQuery("stockUser", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.GetOutInBoundList(id, supplier, stockUser, begTime, endTime, pn, pSize)
+	data, err := service.GetOutInBoundList(id, begTime, endTime, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

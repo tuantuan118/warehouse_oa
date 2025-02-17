@@ -7,22 +7,22 @@ import (
 	"warehouse_oa/utils"
 )
 
-type Inventory struct{}
+type Stock struct{}
 
-var iv Inventory
+var iv Stock
 
-func InitInventoryRouter(router *gin.RouterGroup) {
-	inventoryRouter := router.Group("inventory")
+func InitStockRouter(router *gin.RouterGroup) {
+	stockRouter := router.Group("stock")
 
-	inventoryRouter.GET("list", iv.list)
-	inventoryRouter.GET("fields", iv.fields)
+	stockRouter.GET("list", iv.list)
+	stockRouter.GET("fields", iv.fields)
 }
 
-func (*Inventory) list(c *gin.Context) {
+func (*Stock) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	name := c.DefaultQuery("name", "")
 
-	data, err := service.GetInventoryList(name, pn, pSize)
+	data, err := service.GetStockList(name, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -31,9 +31,9 @@ func (*Inventory) list(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Inventory) fields(c *gin.Context) {
+func (*Stock) fields(c *gin.Context) {
 	field := c.DefaultQuery("field", "")
-	data, err := service.GetInventoryFieldList(field)
+	data, err := service.GetStockFieldList(field)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

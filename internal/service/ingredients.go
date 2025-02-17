@@ -8,6 +8,7 @@ import (
 	"warehouse_oa/internal/models"
 )
 
+// GetIngredientsList 获取配料列表
 func GetIngredientsList(ingredients *models.Ingredients, pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.Ingredients{})
 
@@ -19,18 +20,20 @@ func GetIngredientsList(ingredients *models.Ingredients, pn, pSize int) (interfa
 	return Pagination(db, []models.Ingredients{}, pn, pSize)
 }
 
+// GetIngredientsById 根据ID获取配料详情
 func GetIngredientsById(id int) (*models.Ingredients, error) {
 	db := global.Db.Model(&models.Ingredients{})
 
 	data := &models.Ingredients{}
 	err := db.Where("id = ?", id).First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("user does not exist")
+		return nil, errors.New("配料不存在")
 	}
 
 	return data, err
 }
 
+// GetIngredientsByName 根据名字获取配料详情
 func GetIngredientsByName(name string) ([]int, error) {
 	slice := strings.Split(name, ";")
 
@@ -38,25 +41,13 @@ func GetIngredientsByName(name string) ([]int, error) {
 	idList := make([]int, 0)
 	err := db.Select("id").Where("name in ?", slice).Find(&idList).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("user does not exist")
+		return nil, errors.New("配料不存在")
 	}
 
 	return idList, err
 }
 
-func GetIngredientsBySupplier(supplier string) ([]int, error) {
-	slice := strings.Split(supplier, ";")
-
-	db := global.Db.Model(&models.Ingredients{})
-	idList := make([]int, 0)
-	err := db.Select("id").Where("supplier in ?", slice).Find(&idList).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("user does not exist")
-	}
-
-	return idList, err
-}
-
+// SaveIngredients 新增配料
 func SaveIngredients(ingredients *models.Ingredients) (*models.Ingredients, error) {
 	err := IfIngredientsByName(ingredients.Name)
 	if err != nil {
@@ -68,6 +59,7 @@ func SaveIngredients(ingredients *models.Ingredients) (*models.Ingredients, erro
 	return ingredients, err
 }
 
+// UpdateIngredients 修改配料
 func UpdateIngredients(ingredients *models.Ingredients) (*models.Ingredients, error) {
 	if ingredients.ID == 0 {
 		return nil, errors.New("id is 0")
@@ -81,11 +73,11 @@ func UpdateIngredients(ingredients *models.Ingredients) (*models.Ingredients, er
 		"operator",
 		"remark",
 		"name",
-		"supplier",
 		"is_calculate",
 	).Updates(&ingredients).Error
 }
 
+// DelIngredients 删除配料
 func DelIngredients(id int, username string) error {
 	if id == 0 {
 		return errors.New("id is 0")
@@ -96,7 +88,7 @@ func DelIngredients(id int, username string) error {
 		return err
 	}
 	if data == nil {
-		return errors.New("user does not exist")
+		return errors.New("配料不存在")
 	}
 
 	data.Operator = username
@@ -115,8 +107,6 @@ func GetIngredientsFieldList(field string) ([]string, error) {
 	switch field {
 	case "name":
 		db.Select("name")
-	case "supplier":
-		db.Select("supplier")
 	default:
 		return nil, errors.New("field not exist")
 	}
@@ -137,22 +127,7 @@ func IfIngredientsByName(name string) error {
 		return err
 	}
 	if count > 0 {
-		return errors.New("user name already exists")
-	}
-
-	return nil
-}
-
-// IfIngredientsByNameAndSupplier 判断名称和供应商是否已存在
-func IfIngredientsByNameAndSupplier(name, supplier string) error {
-	var count int64
-	err := global.Db.Model(&models.Ingredients{}).Where("name = ? and supplier = ?",
-		name, supplier).Count(&count).Error
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return errors.New("user name already exists")
+		return errors.New("配料名已存在")
 	}
 
 	return nil

@@ -114,7 +114,7 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 	for _, material := range finishedManage.Material {
 		amount := material.Quantity * float64(finished.ExpectAmount)
 		var cost float64
-		cost, err = UpdateInBoundBalance(tx, material.IngredientInventory, 1, amount)
+		cost, err = UpdateInBoundBalance(tx, material.IngredientStock, 1, amount)
 		if err != nil {
 			return nil, err
 		}
@@ -123,9 +123,9 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 			BaseModel: models.BaseModel{
 				Operator: finished.Operator,
 			},
-			IngredientID:     material.IngredientInventory.IngredientID,
+			IngredientId:     material.IngredientStock.IngredientId,
 			StockNum:         0 - material.Quantity*float64(finished.ExpectAmount),
-			StockUnit:        material.IngredientInventory.StockUnit,
+			StockUnit:        material.IngredientStock.StockUnit,
 			StockUser:        finished.Operator,
 			StockTime:        time.Now(),
 			OperationType:    "出库",
@@ -222,9 +222,9 @@ func VoidFinished(id int, username string) error {
 			BaseModel: models.BaseModel{
 				Operator: username,
 			},
-			IngredientID:     material.IngredientInventory.IngredientID,
+			IngredientId:     material.IngredientStock.IngredientId,
 			StockNum:         material.Quantity * float64(data.ExpectAmount),
-			StockUnit:        material.IngredientInventory.StockUnit,
+			StockUnit:        material.IngredientStock.StockUnit,
 			StockUser:        username,
 			StockTime:        time.Now(),
 			OperationType:    "入库",
@@ -331,9 +331,9 @@ func DelFinished(id int, username string) error {
 			BaseModel: models.BaseModel{
 				Operator: username,
 			},
-			IngredientID:     material.IngredientInventory.IngredientID,
+			IngredientId:     material.IngredientStock.IngredientId,
 			StockNum:         material.Quantity * float64(data.ExpectAmount),
-			StockUnit:        material.IngredientInventory.StockUnit,
+			StockUnit:        material.IngredientStock.StockUnit,
 			StockUser:        username,
 			StockTime:        time.Now(),
 			OperationType:    "入库",

@@ -7,5 +7,5 @@ func InitIngredientRouter(router *gin.RouterGroup) {
 
 	InitInBoundRouter(ingredientRouter)
 	InitIngredientsRouter(ingredientRouter)
-	InitInventoryRouter(ingredientRouter)
+	InitStockRouter(ingredientRouter)
 }

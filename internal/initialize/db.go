@@ -58,7 +58,7 @@ func migration() {
 	err := global.Db.Set("gorm:table_options", "charset=utf8mb4").AutoMigrate(
 		&models.Customer{},
 		&models.IngredientInBound{},
-		&models.IngredientInventory{},
+		&models.IngredientStock{},
 		&models.Ingredients{},
 		&models.Order{},
 		&models.Permission{},

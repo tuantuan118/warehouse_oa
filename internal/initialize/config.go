@@ -7,7 +7,7 @@ func InitConfig() error {
 	global.ServerConfig.MysqlInfo.Port = 3306
 	global.ServerConfig.MysqlInfo.Username = "ware"
 	global.ServerConfig.MysqlInfo.Password = "ware123456"
-	global.ServerConfig.MysqlInfo.DbName = "warehouse_o"
+	global.ServerConfig.MysqlInfo.DbName = "warehouse_oa"
 
 	return nil
 }

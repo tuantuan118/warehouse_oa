@@ -31,22 +31,22 @@ func GetFinishedManageIngredients(id int) ([]map[string]interface{}, error) {
 	productIngredient := make([]models.FinishedMaterial, 0)
 
 	err := db.Where("finished_manage_id = ?", id).Preload(
-		"IngredientInventory.Ingredient").Find(&productIngredient).Error
+		"IngredientStock.Ingredient").Find(&productIngredient).Error
 	if err != nil {
 		return nil, err
 	}
 
 	requestData := make([]map[string]interface{}, 0)
 	for _, v := range productIngredient {
-		ingredient, err := GetIngredientsById(*v.IngredientInventory.IngredientID)
+		ingredient, err := GetIngredientsById(*v.IngredientStock.IngredientId)
 		if err != nil {
 			return nil, err
 		}
 		requestData = append(requestData, map[string]interface{}{
-			"inventory_id": v.IngredientInventory.ID,
-			"name":         ingredient.Name,
-			"quantity":     v.Quantity,
-			"stockUnit":    v.IngredientInventory.StockUnit,
+			"stock_id":  v.IngredientStock.ID,
+			"name":      ingredient.Name,
+			"quantity":  v.Quantity,
+			"stockUnit": v.IngredientStock.StockUnit,
 		})
 	}
 
@@ -58,7 +58,7 @@ func GetFinishedManageById(id int) (*models.FinishedManage, error) {
 
 	data := &models.FinishedManage{}
 	err := db.Where("id = ?", id).Preload(
-		"Material.IngredientInventory").First(&data).Error
+		"Material.IngredientStock").First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("user does not exist")
 	}
@@ -82,12 +82,12 @@ func SaveFinishedManage(finishedManage *models.FinishedManage) (*models.Finished
 	}()
 
 	for _, material := range finishedManage.Material {
-		inventory := new(models.IngredientInventory)
-		inventory, err = GetInventoryById(material.IngredientID)
+		stock := new(models.IngredientStock)
+		stock, err = GetStockById(material.IngredientId)
 		if err != nil {
 			return nil, err
 		}
-		material.IngredientInventory = inventory
+		material.IngredientStock = stock
 	}
 
 	err = global.Db.Model(&models.FinishedManage{}).Create(&finishedManage).Error
@@ -125,12 +125,12 @@ func UpdateFinishedManage(finishedManage *models.FinishedManage) (*models.Finish
 	}
 
 	for _, material := range finishedManage.Material {
-		inventory := new(models.IngredientInventory)
-		inventory, err = GetInventoryById(material.IngredientID)
+		stock := new(models.IngredientStock)
+		stock, err = GetStockById(material.IngredientId)
 		if err != nil {
 			return nil, err
 		}
-		material.IngredientInventory = inventory
+		material.IngredientStock = stock
 	}
 
 	return finishedManage, global.Db.Updates(&finishedManage).Error
