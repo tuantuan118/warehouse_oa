@@ -147,11 +147,12 @@ func (*InBound) export(c *gin.Context) {
 
 func (*InBound) outList(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
-	id := utils.DefaultQueryInt(c, "id", 0)
+	name := c.DefaultQuery("name", "")
+	stockUnit := c.DefaultQuery("stockUnit", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.GetOutInBoundList(id, begTime, endTime, pn, pSize)
+	data, err := service.GetConsumeList(name, stockUnit, begTime, endTime, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

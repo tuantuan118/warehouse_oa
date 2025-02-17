@@ -8,12 +8,12 @@ import (
 	"warehouse_oa/utils"
 )
 
-type Finished struct{}
+type Production struct{}
 
-var p Finished
+var p Production
 
-func InitFinishedRouter(router *gin.RouterGroup) {
-	finishedRouter := router.Group("finished")
+func InitProductionRouter(router *gin.RouterGroup) {
+	finishedRouter := router.Group("production")
 
 	finishedRouter.GET("list", p.list)
 	finishedRouter.GET("outList", p.outList)
@@ -25,9 +25,9 @@ func InitFinishedRouter(router *gin.RouterGroup) {
 	finishedRouter.POST("finish", p.finish)
 }
 
-func (*Finished) list(c *gin.Context) {
+func (*Production) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
-	finished := &models.Finished{
+	finished := &models.FinishedProduction{
 		Name:   c.DefaultQuery("name", ""),
 		Status: utils.DefaultQueryInt(c, "status", -1),
 	}
@@ -45,8 +45,8 @@ func (*Finished) list(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Finished) add(c *gin.Context) {
-	finished := &models.Finished{}
+func (*Production) add(c *gin.Context) {
+	finished := &models.FinishedProduction{}
 	if err := c.ShouldBindJSON(finished); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -63,8 +63,8 @@ func (*Finished) add(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Finished) update(c *gin.Context) {
-	finished := &models.Finished{}
+func (*Production) update(c *gin.Context) {
+	finished := &models.FinishedProduction{}
 	if err := c.ShouldBindJSON(finished); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -81,8 +81,8 @@ func (*Finished) update(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Finished) delete(c *gin.Context) {
-	finished := &models.Finished{}
+func (*Production) delete(c *gin.Context) {
+	finished := &models.FinishedProduction{}
 	if err := c.ShouldBindJSON(finished); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -99,8 +99,8 @@ func (*Finished) delete(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
-func (*Finished) void(c *gin.Context) {
-	finished := &models.Finished{}
+func (*Production) void(c *gin.Context) {
+	finished := &models.FinishedProduction{}
 	if err := c.ShouldBindJSON(finished); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -117,8 +117,8 @@ func (*Finished) void(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
-func (*Finished) finish(c *gin.Context) {
-	finished := &models.Finished{}
+func (*Production) finish(c *gin.Context) {
+	finished := &models.FinishedProduction{}
 	if err := c.ShouldBindJSON(finished); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -135,9 +135,9 @@ func (*Finished) finish(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
-func (*Finished) fields(c *gin.Context) {
+func (*Production) fields(c *gin.Context) {
 	field := c.DefaultQuery("field", "")
-	data, err := service.GetFinishedFieldList(field)
+	data, err := service.GetProductionFieldList(field)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -146,9 +146,9 @@ func (*Finished) fields(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Finished) outList(c *gin.Context) {
+func (*Production) outList(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
-	finished := &models.Finished{
+	finished := &models.FinishedProduction{
 		BaseModel: models.BaseModel{
 			ID: utils.DefaultQueryInt(c, "id", 0),
 		},

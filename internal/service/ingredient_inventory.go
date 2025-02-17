@@ -10,6 +10,8 @@ import (
 
 func GetStockList(name string, pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.IngredientStock{})
+	db = db.Select("ingredient_id, stock_unit, sum(stock_num) as stock_num")
+	db = db.Group("ingredient_id, stock_unit")
 
 	if name != "" {
 		idList, err := GetIngredientsByName(name)
@@ -52,6 +54,7 @@ func GetStockByIngredient(ingredientId, stockUnit int, unitPrice float64) (*mode
 	return data, err
 }
 
+// SaveStockByInBound 通过入库保存库存
 func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 	if inBound.IngredientId == nil && *inBound.IngredientId == 0 {
 		return errors.New("配料ID错误")
@@ -80,6 +83,7 @@ func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 	return err
 }
 
+// SaveStock 保存库存
 func SaveStock(db *gorm.DB, stock *models.IngredientStock) (*models.IngredientStock, error) {
 	ingredients, err := GetIngredientsById(*stock.IngredientId)
 	if err != nil {
@@ -121,6 +125,7 @@ func UpdateStockByInBound(db *gorm.DB, oldInBound *models.IngredientInBound) err
 	return global.Db.Select("stock_num").Updates(&data).Error
 }
 
+// DeductStock 消耗库存
 func DeductStock(db *gorm.DB, inBound *models.IngredientInBound) error {
 	if inBound.IngredientId == nil && *inBound.IngredientId == 0 {
 		return errors.New("配料ID错误")
@@ -146,22 +151,4 @@ func DeductStock(db *gorm.DB, inBound *models.IngredientInBound) error {
 		// 报错
 		return errors.New("库存不足")
 	}
-}
-
-// GetStockFieldList 获取字段列表
-func GetStockFieldList(field string) (map[string]string, error) {
-	db := global.Db.Model(&models.IngredientStock{})
-	db = db.Select("id")
-	switch field {
-	case "name":
-		db = db.Select("name")
-	default:
-		return nil, errors.New("field not exist")
-	}
-	fields := make(map[string]string)
-	if err := db.Scan(&fields).Error; err != nil {
-		return nil, err
-	}
-
-	return fields, nil
 }

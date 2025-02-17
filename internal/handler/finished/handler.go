@@ -5,7 +5,7 @@ import "github.com/gin-gonic/gin"
 func InitFinishedAllRouter(router *gin.RouterGroup) {
 	finishedRouter := router.Group("finished")
 
-	InitFinishedRouter(finishedRouter)
-	InitManageRouter(finishedRouter)
+	InitFinishRouter(finishedRouter)
+	InitProductionRouter(finishedRouter)
 	InitFinishedStockRouter(finishedRouter)
 }

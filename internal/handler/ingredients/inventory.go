@@ -15,7 +15,6 @@ func InitStockRouter(router *gin.RouterGroup) {
 	stockRouter := router.Group("stock")
 
 	stockRouter.GET("list", iv.list)
-	stockRouter.GET("fields", iv.fields)
 }
 
 func (*Stock) list(c *gin.Context) {
@@ -23,17 +22,6 @@ func (*Stock) list(c *gin.Context) {
 	name := c.DefaultQuery("name", "")
 
 	data, err := service.GetStockList(name, pn, pSize)
-	if err != nil {
-		handler.InternalServerError(c, err)
-		return
-	}
-
-	handler.Success(c, data)
-}
-
-func (*Stock) fields(c *gin.Context) {
-	field := c.DefaultQuery("field", "")
-	data, err := service.GetStockFieldList(field)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

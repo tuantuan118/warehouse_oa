@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 	"math/big"
 	"strings"
-	"time"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 	"warehouse_oa/utils"
@@ -141,6 +140,7 @@ func GetInBoundById(id int) (*models.IngredientInBound, error) {
 	return data, err
 }
 
+// SaveInBound 保存
 func SaveInBound(inBound *models.IngredientInBound) (*models.IngredientInBound, error) {
 	// 获取配料ID
 	ingredients, err := GetIngredientsById(*inBound.IngredientId)
@@ -166,15 +166,22 @@ func SaveInBound(inBound *models.IngredientInBound) (*models.IngredientInBound, 
 		}
 	}()
 
+	err = tx.Model(&models.IngredientInBound{}).Create(&inBound).Error
+	if err != nil {
+		return nil, err
+	}
+
 	err = SaveStockByInBound(tx, inBound)
 	if err != nil {
 		return nil, err
 	}
-	err = tx.Model(&models.IngredientInBound{}).Create(&inBound).Error
+
+	err = SaveConsumeByInBound(tx, inBound)
 
 	return inBound, err
 }
 
+// UpdateInBound 更新
 func UpdateInBound(inBound *models.IngredientInBound) (*models.IngredientInBound, error) {
 	if inBound.ID == 0 {
 		return nil, errors.New("id is 0")
@@ -233,6 +240,7 @@ func UpdateInBound(inBound *models.IngredientInBound) (*models.IngredientInBound
 	return inBound, err
 }
 
+// DelInBound 删除
 func DelInBound(id int, username string) error {
 	if id == 0 {
 		return errors.New("id is 0")
@@ -265,9 +273,12 @@ func DelInBound(id int, username string) error {
 
 	err = DeductStock(tx, data)
 
+	err = DelConsumeByInBound(tx, data.ID)
+
 	return err
 }
 
+// ExportIngredients 配料入库页面导出
 func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*excelize.File, error) {
 	db := global.Db.Model(&models.IngredientInBound{})
 	totalDb := global.Db.Model(&models.IngredientInBound{})
@@ -354,177 +365,7 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 	return utils.ExportExcel(keyList, valueList)
 }
 
-func returnUnit(i int) string {
-	switch i {
-	case 1:
-		return "斤"
-	case 2:
-		return "克"
-	case 3:
-		return "件"
-	case 4:
-		return "个"
-	case 5:
-		return "张"
-	case 6:
-		return "盆"
-	case 7:
-		return "桶"
-	case 8:
-		return "包"
-	case 9:
-		return "箱"
-	}
-	return ""
-}
-
-func FinishedSaveInBound(tx *gorm.DB, inBound *models.IngredientInBound) error {
-	ingredients, err := GetIngredientsById(*inBound.IngredientId)
-	if err != nil {
-		return err
-	}
-
-	inBound.Ingredient = ingredients
-
-	err = SaveStockByInBound(tx, inBound)
-	if err != nil {
-		return err
-	}
-	err = tx.Model(&models.IngredientInBound{}).Create(inBound).Error
-
-	return nil
-}
-
-func UpdateInBoundBalance(tx *gorm.DB, stock *models.IngredientStock, pn int,
-	amount float64) (float64, error) {
-
-	//var cost float64
-	//data := make([]models.IngredientInBound, 0)
-	//db := global.Db.Model(&models.IngredientInBound{})
-	//db = db.Where("ingredient_id = ?", stock.IngredientId)
-	//db = db.Where("stock_unit = ?", stock.StockUnit)
-	//db = db.Where("balance > 0")
-	//db = db.Order("id asc").Limit(10).Offset((pn - 1) * 10)
-	//err := db.Find(&data).Error
-	//if err != nil {
-	//	return 0, err
-	//}
-	//if len(data) == 0 {
-	//	return 0, nil
-	//}
-	//
-	//for n, _ := range data {
-	//	d := &data[n]
-	//
-	//	if amount >= d.Balance {
-	//		cost = cost + d.Price*d.Balance
-	//		amount = amount - d.Balance
-	//		d.Balance = 0
-	//	} else {
-	//		cost = cost + d.Price*amount
-	//		d.Balance = d.Balance - amount
-	//		amount = 0
-	//	}
-	//
-	//	err = tx.Model(&models.IngredientInBound{}).
-	//		Where("id = ?", d.ID).
-	//		Update("balance", d.Balance).Error
-	//	if err != nil {
-	//		return 0, err
-	//	}
-	//	if amount == 0 {
-	//		continue
-	//	}
-	//}
-	//if amount > 0 {
-	//	c, err := UpdateInBoundBalance(tx, stock, pn+1, amount)
-	//	if err != nil {
-	//		return 0, err
-	//	}
-	//	cost = cost + c
-	//}
-	//
-	//return cost, nil
-}
-
-// GetOutInBoundList 配料出入库查询接口
-func GetOutInBoundList(ingredientId int, begTime, endTime string,
-	pn, pSize int) (interface{}, error) {
-
-	unionQuery := `
-        SELECT * FROM (
-            SELECT 
-                ingredient_id, 
-                stock_num, 
-                stock_unit, 
-                "入库" as operation_type, 
-                "配料入库" as operation_details,
-                0.0 as cost,
-                created_at,
-                operator
-            FROM ingredient_in_bound
-            UNION ALL
-            SELECT 
-                ingredient_id, 
-                stock_num, 
-                stock_unit, 
-                operation_type, 
-                operation_details,
-                cost,
-                created_at,
-                operator
-            FROM ingredient_consume
-        ) AS combined
-    `
-
-	var timeQuery string
-	var ingredientQuery string
-	if begTime != "" && endTime != "" {
-		timeQuery = fmt.Sprintf("(created_at >= '%s' AND created_at <= '%s')", begTime, endTime)
-	}
-	if ingredientId > 0 {
-		ingredientQuery = fmt.Sprintf("ingredient_id = %d", ingredientId)
-	}
-	if timeQuery != "" && ingredientQuery != "" {
-		unionQuery = fmt.Sprintf("%s WHERE %s AND %s", unionQuery, timeQuery, ingredientQuery)
-	} else if timeQuery != "" {
-		unionQuery = fmt.Sprintf("%s WHERE %s", unionQuery, timeQuery)
-	} else if ingredientQuery != "" {
-		unionQuery = fmt.Sprintf("%s WHERE %s", unionQuery, ingredientQuery)
-	}
-
-	// 获取总记录数
-	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", unionQuery)
-	if err := global.Db.Raw(countSQL).Scan(&total).Error; err != nil {
-		return nil, err
-	}
-
-	query := unionQuery + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-	offset := (pn - 1) * pSize
-	var usageList []models.IngredientsUsage
-	if err := global.Db.Raw(query, pSize, offset).Scan(&usageList).Error; err != nil {
-		return nil, err
-	}
-
-	var cost float64
-	db := global.Db.Model(&models.IngredientConsume{}).Select("sum(cost)")
-	db.Where("ingredient_id = ?", ingredientId)
-	db.Where("created_at >= ? AND created_at <= ?", begTime, endTime)
-	if err := db.First(&cost).Error; err != nil {
-		return nil, err
-	}
-
-	return map[string]interface{}{
-		"data":       usageList,
-		"pageNo":     pn,
-		"pageSize":   pSize,
-		"totalCount": total,
-		"cost":       cost,
-	}, nil
-
-}
-
+// FinishInBound 结帐
 func FinishInBound(id int, totalPrice float64, paymentTime, operator string) (*models.IngredientInBound, error) {
 	if id == 0 {
 		return nil, errors.New("id is 0")
@@ -554,6 +395,7 @@ func FinishInBound(id int, totalPrice float64, paymentTime, operator string) (*m
 		"Operator", "Status").Updates(&data).Error
 }
 
+// GetSupplier 获取所有供应商
 func GetSupplier() ([]string, error) {
 	supplierList := make([]string, 0)
 
@@ -565,4 +407,29 @@ func GetSupplier() ([]string, error) {
 	}
 
 	return supplierList, nil
+}
+
+// returnUnit 单位影射表
+func returnUnit(i int) string {
+	switch i {
+	case 1:
+		return "斤"
+	case 2:
+		return "克"
+	case 3:
+		return "件"
+	case 4:
+		return "个"
+	case 5:
+		return "张"
+	case 6:
+		return "盆"
+	case 7:
+		return "桶"
+	case 8:
+		return "包"
+	case 9:
+		return "箱"
+	}
+	return ""
 }

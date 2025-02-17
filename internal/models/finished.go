@@ -45,6 +45,6 @@ type FinishedConsume struct {
 	FinishedId       int       `gorm:"type:int(11)" json:"finishedId"`
 	Finished         *Finished `gorm:"foreignKey:FinishedId;" json:"finished"`
 	StockNum         float64   `gorm:"type:decimal(16,4)" json:"stockNum"`
-	OperationType    string    `gorm:"type:varchar(256)" json:"operationType"`
+	OperationType    bool      `gorm:"type:bool;default:true" json:"operationType"` // true 表示启用，false 表示禁用
 	OperationDetails string    `gorm:"type:varchar(256)" json:"operationDetails"`
 }

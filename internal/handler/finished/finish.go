@@ -8,27 +8,27 @@ import (
 	"warehouse_oa/utils"
 )
 
-type Manage struct{}
+type Finish struct{}
 
-var m Manage
+var f Finish
 
-func InitManageRouter(router *gin.RouterGroup) {
-	inBoundRouter := router.Group("manage")
+func InitFinishRouter(router *gin.RouterGroup) {
+	inBoundRouter := router.Group("finished")
 
-	inBoundRouter.GET("list", m.list)
-	inBoundRouter.GET("fields", m.fields)
-	inBoundRouter.GET("getIngredients", m.getIngredientsByID)
-	inBoundRouter.POST("add", m.add)
-	inBoundRouter.POST("update", m.update)
-	inBoundRouter.POST("delete", m.delete)
+	inBoundRouter.GET("list", f.list)
+	inBoundRouter.GET("fields", f.fields)
+	inBoundRouter.GET("getIngredients", f.getIngredientsByID)
+	inBoundRouter.POST("add", f.add)
+	inBoundRouter.POST("update", f.update)
+	inBoundRouter.POST("delete", f.delete)
 }
 
-func (*Manage) list(c *gin.Context) {
+func (*Finish) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	ids := c.DefaultQuery("id", "")
 	name := c.DefaultQuery("name", "")
 
-	data, err := service.GetFinishedManageList(ids, name, pn, pSize)
+	data, err := service.GetFinishedList(ids, name, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -37,10 +37,10 @@ func (*Manage) list(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Manage) getIngredientsByID(c *gin.Context) {
+func (*Finish) getIngredientsByID(c *gin.Context) {
 	id := utils.DefaultQueryInt(c, "id", 0)
 
-	data, err := service.GetFinishedManageIngredients(id)
+	data, err := service.GetFinishedIngredients(id)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -49,8 +49,8 @@ func (*Manage) getIngredientsByID(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Manage) add(c *gin.Context) {
-	ingredients := &models.FinishedManage{}
+func (*Finish) add(c *gin.Context) {
+	ingredients := &models.Finished{}
 	if err := c.ShouldBindJSON(ingredients); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -58,7 +58,7 @@ func (*Manage) add(c *gin.Context) {
 	}
 
 	ingredients.Operator = c.GetString("userName")
-	data, err := service.SaveFinishedManage(ingredients)
+	data, err := service.SaveFinished(ingredients)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -67,8 +67,8 @@ func (*Manage) add(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Manage) update(c *gin.Context) {
-	ingredients := &models.FinishedManage{}
+func (*Finish) update(c *gin.Context) {
+	ingredients := &models.Finished{}
 	if err := c.ShouldBindJSON(ingredients); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -76,7 +76,7 @@ func (*Manage) update(c *gin.Context) {
 	}
 
 	ingredients.Operator = c.GetString("userName")
-	data, err := service.UpdateFinishedManage(ingredients)
+	data, err := service.UpdateFinished(ingredients)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -85,8 +85,8 @@ func (*Manage) update(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Manage) delete(c *gin.Context) {
-	ingredients := &models.FinishedManage{}
+func (*Finish) delete(c *gin.Context) {
+	ingredients := &models.Finished{}
 	if err := c.ShouldBindJSON(ingredients); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
@@ -94,7 +94,7 @@ func (*Manage) delete(c *gin.Context) {
 	}
 
 	ingredients.Operator = c.GetString("userName")
-	err := service.DelFinishedManage(ingredients.ID, ingredients.Operator)
+	err := service.DelFinished(ingredients.ID, ingredients.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -103,9 +103,9 @@ func (*Manage) delete(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
-func (*Manage) fields(c *gin.Context) {
+func (*Finish) fields(c *gin.Context) {
 	field := c.DefaultQuery("field", "")
-	data, err := service.GetFinishedManageFieldList(field)
+	data, err := service.GetFinishedFieldList(field)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

@@ -37,13 +37,17 @@ type IngredientStock struct {
 
 type IngredientConsume struct {
 	BaseModel
-	IngredientId     *int         `gorm:"type:int(11)" json:"ingredientId"`
-	Ingredient       *Ingredients `gorm:"foreignKey:IngredientId" json:"ingredient"`
-	StockNum         float64      `gorm:"type:decimal(16,4)" json:"stockNum"`
-	StockUnit        int          `gorm:"type:int(2)" json:"stockUnit"`
-	OperationType    string       `gorm:"type:varchar(256)" json:"operationType"`
-	OperationDetails string       `gorm:"type:varchar(256)" json:"operationDetails"`
-	Cost             float64      `gorm:"type:decimal(12,2)" json:"cost"` // 成本
+	FinishedId       *int               `gorm:"type:int(11)" json:"finishedId"`
+	Finish           *Finished          `gorm:"foreignKey:FinishedId" json:"finish"`
+	IngredientId     *int               `gorm:"type:int(11)" json:"ingredientId"`
+	Ingredient       *Ingredients       `gorm:"foreignKey:IngredientId" json:"ingredient"`
+	InBoundId        *int               `gorm:"type:int(11)" json:"inBoundId"`
+	InBound          *IngredientInBound `gorm:"foreignKey:InBoundId" json:"inBound"`
+	StockNum         float64            `gorm:"type:decimal(16,4)" json:"stockNum"`
+	StockUnit        int                `gorm:"type:int(2)" json:"stockUnit"`
+	OperationType    bool               `gorm:"type:bool;default:true" json:"operationType"` // true 表示启用，false 表示禁用
+	OperationDetails string             `gorm:"type:varchar(256)" json:"operationDetails"`
+	Cost             float64            `gorm:"type:decimal(12,2)" json:"cost"` // 成本
 }
 
 // 返回数据
@@ -78,7 +82,7 @@ type IngredientsUsage struct {
 	Ingredient       Ingredients `json:"ingredient"`
 	StockNum         float64     `json:"stockNum"`
 	StockUnit        int         `json:"stockUnit"`
-	OperationType    string      `json:"operationType"`
+	OperationType    bool        `json:"operationType"` // true 表示启用，false 表示禁用
 	OperationDetails string      `json:"operationDetails"`
 	Cost             float64     `json:"cost"` // 成本
 	CreatedAt        time.Time   `json:"createdAt"`
