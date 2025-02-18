@@ -91,7 +91,7 @@ func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 		},
 		IngredientId: inBound.IngredientId,
 		InBoundId:    &inBound.ID,
-		UnitPrice:    inBound.UnitPrice,
+		InBound:      inBound,
 		StockNum:     inBound.StockNum,
 		StockUnit:    inBound.StockUnit,
 	})
@@ -145,41 +145,65 @@ func UpdateStockByInBound(db *gorm.DB, oldInBound *models.IngredientInBound) err
 func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 	ingredientStock *models.IngredientStock) error {
 
+	var err error
 	for {
 		stock := &models.IngredientStock{}
-		err := global.Db.Model(&models.IngredientStock{}).
+		err = global.Db.Model(&models.IngredientStock{}).
 			Where("ingredient_id = ?", *ingredientStock.IngredientId).
 			Where("stock_unit = ?", ingredientStock.StockUnit).
 			Where("stock_num > ?", 0).
 			Order("created_at asc").First(&stock).Error
+		if err != nil {
+			break
+		}
 
 		if stock.StockUnit > ingredientStock.StockUnit {
-			stock.StockUnit -= ingredientStock.StockUnit
 			// 更新库存
 			_, err = SaveConsume(db, &models.IngredientConsume{
-				FinishedId:       &production.FinishedId,
-				IngredientId:     stock.IngredientId,
-				InBoundId:        stock.InBoundId,
+				FinishedId:   &production.FinishedId,
+				Finish:       production.Finished,
+				IngredientId: stock.IngredientId,
+				//Ingredient:   stock.Ingredient,
+				ProductionId: &production.ID,
+				Production:   production,
+				InBoundId:    stock.InBoundId,
+				//InBound:          stock,
 				StockNum:         ingredientStock.StockNum,
 				StockUnit:        ingredientStock.StockUnit,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
-				Cost:             0,
 			})
+
+			stock.StockUnit -= ingredientStock.StockUnit
 			err = db.Updates(&stock).Error
 			if err != nil {
 				return err
 			}
 		} else {
+			_, err = SaveConsume(db, &models.IngredientConsume{
+				FinishedId:   &production.FinishedId,
+				Finish:       production.Finished,
+				IngredientId: stock.IngredientId,
+				//Ingredient:   stock.Ingredient,
+				ProductionId: &production.ID,
+				Production:   production,
+				InBoundId:    stock.InBoundId,
+				//InBound:          stock,
+				StockNum:         ingredientStock.StockNum,
+				StockUnit:        ingredientStock.StockUnit,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
+			})
+
 			// 删除库存
 			err = db.Delete(&stock).Error
 			if err != nil {
 				return err
 			}
-			production.StockUnit -= stock.StockUnit
+			ingredientStock.StockUnit -= stock.StockUnit
 		}
 	}
-	return nil
+	return err
 }
 
 // DeductStockByInBound 根据inbound删除库存 (修改和删除配料入库时使用)

@@ -32,24 +32,24 @@ type IngredientStock struct {
 	Ingredient   *Ingredients       `gorm:"foreignKey:IngredientId" json:"ingredient"`
 	InBoundId    *int               `gorm:"type:int(11)" json:"inBoundId"`
 	InBound      *IngredientInBound `gorm:"foreignKey:InBoundId" json:"inBound"`
-	UnitPrice    float64            `gorm:"type:decimal(12,2)" json:"unitPrice"`
 	StockNum     float64            `gorm:"type:decimal(16,4)" json:"stockNum"`
 	StockUnit    int                `gorm:"type:int(2)" json:"stockUnit"`
 }
 
 type IngredientConsume struct {
 	BaseModel
-	FinishedId       *int               `gorm:"type:int(11)" json:"finishedId"`
-	Finish           *Finished          `gorm:"foreignKey:FinishedId" json:"finish"`
-	IngredientId     *int               `gorm:"type:int(11)" json:"ingredientId"`
-	Ingredient       *Ingredients       `gorm:"foreignKey:IngredientId" json:"ingredient"`
-	InBoundId        *int               `gorm:"type:int(11)" json:"inBoundId"`
-	InBound          *IngredientInBound `gorm:"foreignKey:InBoundId" json:"inBound"`
-	StockNum         float64            `gorm:"type:decimal(16,4)" json:"stockNum"`
-	StockUnit        int                `gorm:"type:int(2)" json:"stockUnit"`
-	OperationType    bool               `gorm:"type:bool;default:true" json:"operationType"` // true 表示启用，false 表示禁用
-	OperationDetails string             `gorm:"type:varchar(256)" json:"operationDetails"`
-	Cost             float64            `gorm:"type:decimal(12,2)" json:"cost"` // 成本
+	FinishedId       *int                `gorm:"type:int(11)" json:"finishedId"` // 关联成品ID
+	Finish           *Finished           `gorm:"foreignKey:FinishedId" json:"finish"`
+	IngredientId     *int                `gorm:"type:int(11)" json:"ingredientId"` // 关联配料ID
+	Ingredient       *Ingredients        `gorm:"foreignKey:IngredientId" json:"ingredient"`
+	ProductionId     *int                `gorm:"type:int(11)" json:"productionId"` // 关联报功ID
+	Production       *FinishedProduction `gorm:"foreignKey:ProductionId" json:"production"`
+	InBoundId        *int                `gorm:"type:int(11)" json:"inBoundId"` // 关联入库ID
+	InBound          *IngredientInBound  `gorm:"foreignKey:InBoundId" json:"inBound"`
+	StockNum         float64             `gorm:"type:decimal(16,4)" json:"stockNum"`
+	StockUnit        int                 `gorm:"type:int(2)" json:"stockUnit"`
+	OperationType    bool                `gorm:"type:bool;default:true" json:"operationType"` // true表示启用，false表示禁用
+	OperationDetails string              `gorm:"type:varchar(256)" json:"operationDetails"`
 }
 
 // 返回数据

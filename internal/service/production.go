@@ -64,7 +64,7 @@ func GetProductionById(id int) (*models.FinishedProduction, error) {
 	return data, err
 }
 
-func SaveProduction(production *models.FinishedProduction) (*models.Finished, error) {
+func SaveProduction(production *models.FinishedProduction) (*models.FinishedProduction, error) {
 	finished, err := GetFinishedById(production.FinishedId)
 	if err != nil {
 		return nil, err
@@ -92,6 +92,12 @@ func SaveProduction(production *models.FinishedProduction) (*models.Finished, er
 		}
 	}()
 
+	err = tx.Model(&models.FinishedProduction{}).Create(&production).Error
+	if err != nil {
+		logrus.Info(err)
+		return nil, err
+	}
+
 	// 扣除配料库存
 	for _, material := range finished.Material {
 		err = DeductStock(tx, production,
@@ -106,12 +112,6 @@ func SaveProduction(production *models.FinishedProduction) (*models.Finished, er
 	}
 
 	// 添加成品出入库信息
-
-	err = tx.Model(&models.Finished{}).Create(&finished).Error
-	if err != nil {
-		logrus.Info(err)
-		return nil, err
-	}
 
 	return finished, err
 }
