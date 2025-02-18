@@ -92,7 +92,6 @@ func DelIngredients(id int, username string) error {
 	}
 
 	data.Operator = username
-	data.IsDeleted = true
 	err = global.Db.Updates(&data).Error
 	if err != nil {
 		return err

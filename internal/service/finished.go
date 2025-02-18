@@ -33,63 +33,56 @@ func GetFinishedIngredients(id int) ([]map[string]interface{}, error) {
 	productIngredient := make([]models.FinishedMaterial, 0)
 
 	err := db.Where("finished_id = ?", id).Preload(
-		"IngredientStock.Ingredient").Find(&productIngredient).Error
+		"Ingredient").Find(&productIngredient).Error
 	if err != nil {
 		return nil, err
 	}
 
 	requestData := make([]map[string]interface{}, 0)
 	for _, v := range productIngredient {
-		ingredient, err := GetIngredientsById(*v.IngredientStock.IngredientId)
+		ingredient, err := GetIngredientsById(*v.IngredientId)
 		if err != nil {
 			return nil, err
 		}
 		requestData = append(requestData, map[string]interface{}{
-			"stock_id":  v.IngredientStock.ID,
-			"name":      ingredient.Name,
-			"quantity":  v.Quantity,
-			"stockUnit": v.IngredientStock.StockUnit,
+			"ingredientId": ingredient.ID,
+			"name":         ingredient.Name,
+			"stockUnit":    v.StockUnit,
+			"quantity":     v.Quantity,
 		})
 	}
 
 	return requestData, err
 }
 
+// GetFinishedById ID查询成品
 func GetFinishedById(id int) (*models.Finished, error) {
 	db := global.Db.Model(&models.Finished{})
 
 	data := &models.Finished{}
 	err := db.Where("id = ?", id).Preload(
-		"Material.IngredientStock").First(&data).Error
+		"Material.Ingredient").First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("user does not exist")
+		return nil, errors.New("查找成品失败")
 	}
 
 	return data, err
 }
 
+// SaveFinished 新增成品
 func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 	if finished.Material == nil || len(finished.Material) == 0 {
-		return nil, errors.New("ingredients is empty")
+		return nil, errors.New("配料列表不能为空")
 	}
 	var err error
-	db := global.Db
-	tx := db.Begin()
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
 
 	for _, material := range finished.Material {
-		stock := new(models.IngredientStock)
-		stock, err = GetStockById(material.IngredientId)
+		ingredients := new(models.Ingredients)
+		ingredients, err = GetIngredientsById(*material.IngredientId)
 		if err != nil {
 			return nil, err
 		}
-		material.IngredientStock = stock
+		material.Ingredient = ingredients
 	}
 
 	err = global.Db.Model(&models.Finished{}).Create(&finished).Error
@@ -100,6 +93,7 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 	return finished, err
 }
 
+// UpdateFinished 修改成品
 func UpdateFinished(finished *models.Finished) (*models.Finished, error) {
 	if finished.ID == 0 {
 		return nil, errors.New("id is 0")
@@ -109,16 +103,8 @@ func UpdateFinished(finished *models.Finished) (*models.Finished, error) {
 		return nil, err
 	}
 
-	total, err := GetFinishedByStatus(finished.ID, 1)
-	if err != nil {
-		return nil, err
-	}
-	if total > 0 {
-		return nil, errors.New("exist finished, can not update")
-	}
-
 	if finished.Material == nil || len(finished.Material) == 0 {
-		return nil, errors.New("ingredients is empty")
+		return nil, errors.New("配料列表不能为空")
 	}
 
 	err = RemoveIngredients(finished.ID)
@@ -127,18 +113,18 @@ func UpdateFinished(finished *models.Finished) (*models.Finished, error) {
 	}
 
 	for _, material := range finished.Material {
-		stock := new(models.IngredientStock)
-		stock, err = GetStockById(material.IngredientId)
+		ingredients := new(models.Ingredients)
+		ingredients, err = GetIngredientsById(*material.IngredientId)
 		if err != nil {
 			return nil, err
 		}
-		material.IngredientStock = stock
+		material.Ingredient = ingredients
 	}
 
 	return finished, global.Db.Updates(&finished).Error
 }
 
-func DelFinished(id int, username string) error {
+func DelFinished(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -148,22 +134,15 @@ func DelFinished(id int, username string) error {
 		return err
 	}
 	if data == nil {
-		return errors.New("user does not exist")
+		return errors.New("查询成品失败")
 	}
 
-	total, err := GetFinishedByStatus(id, 1)
+	_, total, err := GetProductionByFinishedId(id)
 	if err != nil {
 		return err
 	}
 	if total > 0 {
-		return errors.New("exist finished, can not delete")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
+		return errors.New("成品有报工记录，无法删除")
 	}
 
 	return global.Db.Delete(&data).Error
@@ -186,8 +165,8 @@ func GetFinishedFieldList(field string) ([]string, error) {
 	return fields, nil
 }
 
-func RemoveIngredients(manageId int) error {
+func RemoveIngredients(finishedId int) error {
 	return global.Db.Model(&models.FinishedMaterial{}).Where(
-		"finished_manage_id = ?", manageId).Delete(&models.FinishedMaterial{}).Error
+		"finished_id = ?", finishedId).Delete(&models.FinishedMaterial{}).Error
 
 }

@@ -28,11 +28,13 @@ type IngredientInBound struct {
 
 type IngredientStock struct {
 	BaseModel
-	IngredientId *int         `gorm:"type:int(11)" json:"ingredientId"`
-	Ingredient   *Ingredients `gorm:"foreignKey:IngredientId" json:"ingredient"`
-	UnitPrice    float64      `gorm:"type:decimal(12,2)" json:"unitPrice"`
-	StockNum     float64      `gorm:"type:decimal(16,4)" json:"stockNum"`
-	StockUnit    int          `gorm:"type:int(2)" json:"stockUnit"`
+	IngredientId *int               `gorm:"type:int(11)" json:"ingredientId"`
+	Ingredient   *Ingredients       `gorm:"foreignKey:IngredientId" json:"ingredient"`
+	InBoundId    *int               `gorm:"type:int(11)" json:"inBoundId"`
+	InBound      *IngredientInBound `gorm:"foreignKey:InBoundId" json:"inBound"`
+	UnitPrice    float64            `gorm:"type:decimal(12,2)" json:"unitPrice"`
+	StockNum     float64            `gorm:"type:decimal(16,4)" json:"stockNum"`
+	StockUnit    int                `gorm:"type:int(2)" json:"stockUnit"`
 }
 
 type IngredientConsume struct {

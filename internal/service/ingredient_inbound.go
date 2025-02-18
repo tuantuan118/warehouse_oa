@@ -228,7 +228,7 @@ func UpdateInBound(inBound *models.IngredientInBound) (*models.IngredientInBound
 	inBound.StockNum = inBound.StockNum - oldData.StockNum
 
 	// 从库存中 扣除旧数据的数量，新增新数据的数量
-	err = DeductStock(tx, oldData)
+	err = DeductStockByInBound(tx, oldData)
 	if err != nil {
 		if err.Error() == "配料不足" {
 			return nil, errors.New("当前配料的库存已被使用，修改可能影响成本计算")
@@ -271,8 +271,10 @@ func DelInBound(id int, username string) error {
 		return err
 	}
 
-	err = DeductStock(tx, data)
+	// 扣除库存
+	err = DeductStockByInBound(tx, data)
 
+	// 删除出入库信息
 	err = DelConsumeByInBound(tx, data.ID)
 
 	return err

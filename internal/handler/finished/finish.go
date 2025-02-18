@@ -93,8 +93,7 @@ func (*Finish) delete(c *gin.Context) {
 		return
 	}
 
-	ingredients.Operator = c.GetString("userName")
-	err := service.DelFinished(ingredients.ID, ingredients.Operator)
+	err := service.DelFinished(ingredients.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

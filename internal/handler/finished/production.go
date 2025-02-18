@@ -13,30 +13,29 @@ type Production struct{}
 var p Production
 
 func InitProductionRouter(router *gin.RouterGroup) {
-	finishedRouter := router.Group("production")
+	productionRouter := router.Group("production")
 
-	finishedRouter.GET("list", p.list)
-	finishedRouter.GET("outList", p.outList)
-	finishedRouter.GET("fields", p.fields)
-	finishedRouter.POST("add", p.add)
-	finishedRouter.POST("update", p.update)
-	finishedRouter.POST("delete", p.delete)
-	finishedRouter.POST("void", p.void)
-	finishedRouter.POST("finish", p.finish)
+	productionRouter.GET("list", p.list)
+	productionRouter.GET("outList", p.outList)
+	productionRouter.POST("add", p.add)
+	productionRouter.POST("update", p.update)
+	productionRouter.POST("delete", p.delete)
+	productionRouter.POST("void", p.void)
+	productionRouter.POST("finish", p.finish)
 }
 
+// list 成品报工列表
 func (*Production) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
-	finished := &models.FinishedProduction{
-		Name:   c.DefaultQuery("name", ""),
-		Status: utils.DefaultQueryInt(c, "status", -1),
+	production := &models.FinishedProduction{
+		FinishedId: utils.DefaultQueryInt(c, "finishedId", 0),
+		Status:     utils.DefaultQueryInt(c, "status", -1),
 	}
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.GetFinishedList(finished,
-		begTime, endTime,
-		pn, pSize, true)
+	data, err := service.GetProductionList(production,
+		begTime, endTime, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -46,15 +45,15 @@ func (*Production) list(c *gin.Context) {
 }
 
 func (*Production) add(c *gin.Context) {
-	finished := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(finished); err != nil {
+	production := &models.FinishedProduction{}
+	if err := c.ShouldBindJSON(production); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	finished.Operator = c.GetString("userName")
-	data, err := service.SaveFinished(finished)
+	production.Operator = c.GetString("userName")
+	data, err := service.SaveProduction(production)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -64,15 +63,15 @@ func (*Production) add(c *gin.Context) {
 }
 
 func (*Production) update(c *gin.Context) {
-	finished := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(finished); err != nil {
+	production := &models.FinishedProduction{}
+	if err := c.ShouldBindJSON(production); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	finished.Operator = c.GetString("userName")
-	data, err := service.UpdateFinished(finished)
+	production.Operator = c.GetString("userName")
+	data, err := service.UpdateFinished(production)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -82,15 +81,15 @@ func (*Production) update(c *gin.Context) {
 }
 
 func (*Production) delete(c *gin.Context) {
-	finished := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(finished); err != nil {
+	production := &models.FinishedProduction{}
+	if err := c.ShouldBindJSON(production); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	finished.Operator = c.GetString("userName")
-	err := service.DelFinished(finished.ID, finished.Operator)
+	production.Operator = c.GetString("userName")
+	err := service.DelFinished(production.ID, production.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -100,15 +99,15 @@ func (*Production) delete(c *gin.Context) {
 }
 
 func (*Production) void(c *gin.Context) {
-	finished := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(finished); err != nil {
+	production := &models.FinishedProduction{}
+	if err := c.ShouldBindJSON(production); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	finished.Operator = c.GetString("userName")
-	err := service.VoidFinished(finished.ID, finished.Operator)
+	production.Operator = c.GetString("userName")
+	err := service.VoidFinished(production.ID, production.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -118,15 +117,15 @@ func (*Production) void(c *gin.Context) {
 }
 
 func (*Production) finish(c *gin.Context) {
-	finished := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(finished); err != nil {
+	production := &models.FinishedProduction{}
+	if err := c.ShouldBindJSON(production); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	finished.Operator = c.GetString("userName")
-	err := service.FinishFinished(finished.ID, finished.ActualAmount, finished.Operator)
+	production.Operator = c.GetString("userName")
+	err := service.FinishFinished(production.ID, production.ActualAmount, production.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -135,30 +134,20 @@ func (*Production) finish(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
-func (*Production) fields(c *gin.Context) {
-	field := c.DefaultQuery("field", "")
-	data, err := service.GetProductionFieldList(field)
-	if err != nil {
-		handler.InternalServerError(c, err)
-		return
-	}
-
-	handler.Success(c, data)
-}
-
+// outList 成品出入库接口
 func (*Production) outList(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
-	finished := &models.FinishedProduction{
+	production := &models.FinishedProduction{
 		BaseModel: models.BaseModel{
 			ID: utils.DefaultQueryInt(c, "id", 0),
 		},
-		Name:   c.DefaultQuery("name", ""),
-		Status: utils.DefaultQueryInt(c, "status", -1),
+		FinishedId: utils.DefaultQueryInt(c, "finishedId", 0),
+		Status:     utils.DefaultQueryInt(c, "status", -1),
 	}
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.GetOutFinishedList(finished,
+	data, err := service.GetFinishedConsumeList(production,
 		begTime, endTime,
 		pn, pSize)
 	if err != nil {

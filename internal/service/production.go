@@ -5,81 +5,81 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-	"strings"
 	"time"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
 
-func GetProductionList(finished *models.Finished,
-	begTime, endTime string,
-	pn, pSize int, b bool) (interface{}, error) {
-	db := global.Db.Model(&models.Finished{})
-	db.Preload("FinishedManage")
+// GetProductionList 查询成品报工
+func GetProductionList(production *models.FinishedProduction,
+	begTime, endTime string, pn, pSize int) (interface{}, error) {
 
-	if finished.FinishedManageId > 0 {
-		db = db.Where("finished_manage_id = ?", finished.FinishedManageId)
+	db := global.Db.Model(&models.FinishedProduction{})
+	db.Preload("Finished")
+
+	if production.FinishedId > 0 {
+		db = db.Where("finished_id = ?", production.FinishedId)
 	}
-	if finished.Name != "" {
-		slice := strings.Split(finished.Name, ";")
-		db = db.Where("name in ?", slice)
-	}
-	if finished.Status > 0 {
-		db = db.Where("status = ?", finished.Status)
+	if production.Status > 0 {
+		db = db.Where("status = ?", production.Status)
 	}
 	if begTime != "" && endTime != "" {
 		db = db.Where("DATE_FORMAT(finish_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
-	if b {
-		db = db.Where("in_and_out = ?", b)
-	} else {
-		db = db.Where("status != ?", 1)
-	}
 
-	return Pagination(db, []models.Finished{}, pn, pSize)
+	return Pagination(db, []models.FinishedProduction{}, pn, pSize)
 }
 
-func GetOutProductionList(finished *models.Production,
+func GetFinishedConsumeList(production *models.FinishedProduction,
 	begTime, endTime string,
 	pn, pSize int) (interface{}, error) {
 
-	var finishedManageId int
-	if finished.ID != 0 {
-		stock, err := GetFinishedStockById(finished.ID)
-		if err != nil {
-			return nil, err
-		}
-		finishedManageId = stock.FinishedManageId
+	db := global.Db.Model(&models.FinishedConsume{})
+
+	if production.ID > 0 {
+		db = db.Where("id = ?", production.ID)
+	}
+	if production.FinishedId > 0 {
+		db = db.Where("finished_id = ?", production.FinishedId)
+	}
+	if production.Status > 0 {
+		db = db.Where("status = ?", production.Status)
+	}
+	if begTime != "" && endTime != "" {
+		db = db.Where("DATE_FORMAT(finish_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
-	return GetFinishedList(&models.Finished{
-		Name:             finished.Name,
-		Status:           finished.Status,
-		FinishedManageId: finishedManageId,
-	}, begTime, endTime, pn, pSize, false)
+	return Pagination(db, []models.FinishedConsume{}, pn, pSize)
 }
 
-func GetProductionById(id int) (*models.Finished, error) {
-	db := global.Db.Model(&models.Finished{})
+func GetProductionById(id int) (*models.FinishedProduction, error) {
+	db := global.Db.Model(&models.FinishedProduction{})
 
-	data := &models.Finished{}
+	data := &models.FinishedProduction{}
 	err := db.Where("id = ?", id).First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("user does not exist")
+		return nil, errors.New("成品报工不存在")
 	}
 
 	return data, err
 }
 
-func SaveProduction(finished *models.Finished) (*models.Finished, error) {
-	err := IfIngredientsByName(finished.Name)
+func SaveProduction(production *models.FinishedProduction) (*models.Finished, error) {
+	finished, err := GetFinishedById(production.FinishedId)
 	if err != nil {
 		return nil, err
 	}
-
-	finishedManage, err := GetFinishedManageById(finished.FinishedManageId)
-	if err != nil {
-		return nil, err
+	production.Finished = finished
+	production.Status = 1
+	production.FinishTime = nil
+	if production.FinishHour > 0 {
+		et := time.Now().Add(time.Duration(production.FinishHour) * time.Hour)
+		production.EstimatedTime = &et
+	} else {
+		// 4=已超时
+		production.Status = 4
+		et := time.Now()
+		production.EstimatedTime = &et
 	}
 
 	db := global.Db
@@ -92,55 +92,21 @@ func SaveProduction(finished *models.Finished) (*models.Finished, error) {
 		}
 	}()
 
-	finished.FinishedManage = finishedManage
-	finished.Name = finishedManage.Name
-	finished.Status = 1
-	finished.FinishTime = nil
-	finished.InAndOut = true
-	finished.OperationType = "入库"
-
-	if finished.FinishHour > 0 {
-		et := time.Now().Add(time.Duration(finished.FinishHour) * time.Hour)
-		finished.EstimatedTime = &et
-
-	} else {
-		finished.Status = 4
-		et := time.Now()
-		finished.EstimatedTime = &et
-	}
-
 	// 扣除配料库存
-	var sumCost float64
-	for _, material := range finishedManage.Material {
-		amount := material.Quantity * float64(finished.ExpectAmount)
-		var cost float64
-		cost, err = UpdateInBoundBalance(tx, material.IngredientStock, 1, amount)
+	for _, material := range finished.Material {
+		err = DeductStock(tx, production,
+			&models.IngredientStock{
+				IngredientId: material.IngredientId,
+				StockNum:     material.Quantity * float64(production.ActualAmount),
+				StockUnit:    material.StockUnit,
+			})
 		if err != nil {
 			return nil, err
 		}
-
-		err = FinishedSaveInBound(tx, &models.IngredientInBound{
-			BaseModel: models.BaseModel{
-				Operator: finished.Operator,
-			},
-			IngredientId:     material.IngredientStock.IngredientId,
-			StockNum:         0 - material.Quantity*float64(finished.ExpectAmount),
-			StockUnit:        material.IngredientStock.StockUnit,
-			StockUser:        finished.Operator,
-			StockTime:        time.Now(),
-			OperationType:    "出库",
-			Cost:             cost,
-			OperationDetails: fmt.Sprintf("报工生产【%s】", finished.Name),
-		})
-		if err != nil {
-			return nil, err
-		}
-		sumCost += cost
 	}
 
-	finished.Balance = finished.ActualAmount
-	finished.Cost = sumCost
-	finished.Price = 0
+	// 添加成品出入库信息
+
 	err = tx.Model(&models.Finished{}).Create(&finished).Error
 	if err != nil {
 		logrus.Info(err)
@@ -348,35 +314,6 @@ func DelProduction(id int, username string) error {
 	return tx.Delete(&data).Error
 }
 
-// GetProductionFieldList 获取字段列表
-func GetProductionFieldList(field string) ([]string, error) {
-	db := global.Db.Model(&models.Production{})
-	switch field {
-	case "name":
-		db.Select("name")
-	case "orderNumber":
-		db.Select("order_number")
-	default:
-		return nil, errors.New("field not exist")
-	}
-	fields := make([]string, 0)
-	if err := db.Scan(&fields).Error; err != nil {
-		return nil, err
-	}
-
-	return fields, nil
-}
-
-func GetProductionByStatus(id, status int) (int64, error) {
-	var total int64
-	db := global.Db.Model(&models.Finished{})
-	db = db.Where("finished_manage_id = ?", id)
-	db = db.Where("status = ?", status)
-	err := db.Count(&total).Error
-
-	return total, err
-}
-
 func ProductSaveProduction(tx *gorm.DB, finished *models.Finished) error {
 	manage, err := GetFinishedManageById(finished.FinishedManageId)
 	if err != nil {
@@ -440,4 +377,23 @@ func UpdateProductionBalance(tx *gorm.DB, finishedId, pn int,
 	}
 
 	return cost, nil
+}
+
+func GetProductionByFinishedId(finishedId int) ([]models.FinishedProduction, int64, error) {
+	var err error
+	var total int64
+	var data []models.FinishedProduction
+
+	db := global.Db.Model(&models.FinishedProduction{})
+	db.Where("finished_id = ?", finishedId)
+	if err = db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, errors.New("成品报工不存在")
+	}
+
+	err = db.Find(&data).Error
+
+	return data, total, err
 }

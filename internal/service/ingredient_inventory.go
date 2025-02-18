@@ -2,12 +2,14 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"gorm.io/gorm"
 	"time"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
 
+// GetStockList 获取库存列表
 func GetStockList(name string, pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.IngredientStock{})
 	db = db.Select("ingredient_id, stock_unit, sum(stock_num) as stock_num")
@@ -23,6 +25,17 @@ func GetStockList(name string, pn, pSize int) (interface{}, error) {
 	db = db.Preload("Ingredient")
 
 	return Pagination(db, []models.IngredientStock{}, pn, pSize)
+}
+
+// GetStockName 获取库存的名字和单位
+func GetStockName() (interface{}, error) {
+	var data []models.IngredientStock
+	db := global.Db.Model(&models.IngredientStock{})
+	db = db.Distinct("ingredient_id, stock_unit")
+	db = db.Preload("Ingredient")
+	err := db.Find(&data).Error
+
+	return data, err
 }
 
 func GetStockById(id int) (*models.IngredientStock, error) {
@@ -45,7 +58,9 @@ func GetStockByIngredient(ingredientId, stockUnit int, unitPrice float64) (*mode
 	}
 	db = db.Where("ingredient_id = ?", ingredientId)
 	db = db.Where("stock_unit = ?", stockUnit)
-	db = db.Where("unit_price = ?", unitPrice)
+	if unitPrice != 0 {
+		db = db.Where("unit_price = ?", unitPrice)
+	}
 	db = db.Preload("Ingredient")
 
 	data := &models.IngredientStock{}
@@ -75,6 +90,7 @@ func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 			CreatedAt: inBound.CreatedAt,
 		},
 		IngredientId: inBound.IngredientId,
+		InBoundId:    &inBound.ID,
 		UnitPrice:    inBound.UnitPrice,
 		StockNum:     inBound.StockNum,
 		StockUnit:    inBound.StockUnit,
@@ -125,8 +141,49 @@ func UpdateStockByInBound(db *gorm.DB, oldInBound *models.IngredientInBound) err
 	return global.Db.Select("stock_num").Updates(&data).Error
 }
 
-// DeductStock 消耗库存
-func DeductStock(db *gorm.DB, inBound *models.IngredientInBound) error {
+// DeductStock 扣除库存, 并且新增消耗表
+func DeductStock(db *gorm.DB, production *models.FinishedProduction,
+	ingredientStock *models.IngredientStock) error {
+
+	for {
+		stock := &models.IngredientStock{}
+		err := global.Db.Model(&models.IngredientStock{}).
+			Where("ingredient_id = ?", *ingredientStock.IngredientId).
+			Where("stock_unit = ?", ingredientStock.StockUnit).
+			Where("stock_num > ?", 0).
+			Order("created_at asc").First(&stock).Error
+
+		if stock.StockUnit > ingredientStock.StockUnit {
+			stock.StockUnit -= ingredientStock.StockUnit
+			// 更新库存
+			_, err = SaveConsume(db, &models.IngredientConsume{
+				FinishedId:       &production.FinishedId,
+				IngredientId:     stock.IngredientId,
+				InBoundId:        stock.InBoundId,
+				StockNum:         ingredientStock.StockNum,
+				StockUnit:        ingredientStock.StockUnit,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
+				Cost:             0,
+			})
+			err = db.Updates(&stock).Error
+			if err != nil {
+				return err
+			}
+		} else {
+			// 删除库存
+			err = db.Delete(&stock).Error
+			if err != nil {
+				return err
+			}
+			production.StockUnit -= stock.StockUnit
+		}
+	}
+	return nil
+}
+
+// DeductStockByInBound 根据inbound删除库存 (修改和删除配料入库时使用)
+func DeductStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 	if inBound.IngredientId == nil && *inBound.IngredientId == 0 {
 		return errors.New("配料ID错误")
 	}
