@@ -56,7 +56,7 @@ func UpdateECommBill(eCommBill *models.ECommBill) (*models.ECommBill, error) {
 	return eCommBill, global.Db.Updates(&eCommBill).Error
 }
 
-func DelECommBill(id int, username string) error {
+func DelECommBill(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -67,13 +67,6 @@ func DelECommBill(id int, username string) error {
 	}
 	if data == nil {
 		return errors.New("user does not exist")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
 	}
 
 	return global.Db.Delete(&data).Error

@@ -80,8 +80,7 @@ func (*CustomersHandler) delete(c *gin.Context) {
 		return
 	}
 
-	eCommCustomers.Operator = c.GetString("userName")
-	err := service.DelECommCustomers(eCommCustomers.ID, eCommCustomers.Operator)
+	err := service.DelECommCustomers(eCommCustomers.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

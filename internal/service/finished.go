@@ -25,7 +25,7 @@ func GetFinishedList(ids, name string, pn, pSize int) (interface{}, error) {
 }
 
 // GetFinishedIngredients 获取成品配料
-func GetFinishedIngredients(id int) ([]map[string]interface{}, error) {
+func GetFinishedIngredients(id int) (interface{}, error) {
 	if id == 0 {
 		return nil, errors.New("id is 0")
 	}
@@ -38,21 +38,7 @@ func GetFinishedIngredients(id int) ([]map[string]interface{}, error) {
 		return nil, err
 	}
 
-	requestData := make([]map[string]interface{}, 0)
-	for _, v := range productIngredient {
-		ingredient, err := GetIngredientsById(*v.IngredientId)
-		if err != nil {
-			return nil, err
-		}
-		requestData = append(requestData, map[string]interface{}{
-			"ingredientId": ingredient.ID,
-			"name":         ingredient.Name,
-			"stockUnit":    v.StockUnit,
-			"quantity":     v.Quantity,
-		})
-	}
-
-	return requestData, err
+	return productIngredient, err
 }
 
 // GetFinishedById ID查询成品
@@ -77,12 +63,10 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 	var err error
 
 	for _, material := range finished.Material {
-		ingredients := new(models.Ingredients)
-		ingredients, err = GetIngredientsById(*material.IngredientId)
+		_, err = GetIngredientsById(material.IngredientId)
 		if err != nil {
 			return nil, err
 		}
-		material.Ingredient = ingredients
 	}
 
 	err = global.Db.Model(&models.Finished{}).Create(&finished).Error
@@ -107,21 +91,31 @@ func UpdateFinished(finished *models.Finished) (*models.Finished, error) {
 		return nil, errors.New("配料列表不能为空")
 	}
 
-	err = RemoveIngredients(finished.ID)
+	// 判断配料是否都存在
+	for _, material := range finished.Material {
+		material.Ingredient, err = GetIngredientsById(material.IngredientId)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	db := global.Db
+	tx := db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// 删除关联
+	err = RemoveIngredients(tx, finished.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, material := range finished.Material {
-		ingredients := new(models.Ingredients)
-		ingredients, err = GetIngredientsById(*material.IngredientId)
-		if err != nil {
-			return nil, err
-		}
-		material.Ingredient = ingredients
-	}
-
-	return finished, global.Db.Updates(&finished).Error
+	return finished, tx.Updates(&finished).Error
 }
 
 func DelFinished(id int) error {
@@ -145,7 +139,23 @@ func DelFinished(id int) error {
 		return errors.New("成品有报工记录，无法删除")
 	}
 
-	return global.Db.Delete(&data).Error
+	db := global.Db
+	tx := db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// 删除关联
+	err = RemoveIngredients(tx, data.ID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Delete(&data).Error
 }
 
 // GetFinishedFieldList 获取字段列表
@@ -165,8 +175,8 @@ func GetFinishedFieldList(field string) ([]string, error) {
 	return fields, nil
 }
 
-func RemoveIngredients(finishedId int) error {
-	return global.Db.Model(&models.FinishedMaterial{}).Where(
+// RemoveIngredients 删除关联的配料
+func RemoveIngredients(db *gorm.DB, finishedId int) error {
+	return db.Model(&models.FinishedMaterial{}).Where(
 		"finished_id = ?", finishedId).Delete(&models.FinishedMaterial{}).Error
-
 }

@@ -35,6 +35,7 @@ func GetFinishedConsumeList(production *models.FinishedProduction,
 	pn, pSize int) (interface{}, error) {
 
 	db := global.Db.Model(&models.FinishedConsume{})
+	db.Preload("Finished")
 
 	if production.ID > 0 {
 		db = db.Where("id = ?", production.ID)
@@ -46,7 +47,7 @@ func GetFinishedConsumeList(production *models.FinishedProduction,
 		db = db.Where("status = ?", production.Status)
 	}
 	if begTime != "" && endTime != "" {
-		db = db.Where("DATE_FORMAT(finish_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
 	return Pagination(db, []models.FinishedConsume{}, pn, pSize)
@@ -102,8 +103,8 @@ func SaveProduction(production *models.FinishedProduction) (*models.FinishedProd
 	for _, material := range finished.Material {
 		err = DeductStock(tx, production,
 			&models.IngredientStock{
-				IngredientId: material.IngredientId,
-				StockNum:     material.Quantity * float64(production.ActualAmount),
+				IngredientId: &material.IngredientId,
+				StockNum:     material.Quantity * float64(production.ExpectAmount),
 				StockUnit:    material.StockUnit,
 			})
 		if err != nil {
@@ -111,61 +112,29 @@ func SaveProduction(production *models.FinishedProduction) (*models.FinishedProd
 		}
 	}
 
-	// 添加成品出入库信息
-
-	return finished, err
+	return production, err
 }
 
-func UpdateProduction(finished *models.Finished) (*models.Finished, error) {
-	if finished.ID == 0 {
-		return nil, errors.New("id is 0")
-	}
-	oldData, err := GetFinishedById(finished.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	if oldData.Status == 2 || oldData.Status == 3 {
-		return nil, errors.New("finished has been finished, can not update")
-	}
-
-	db := global.Db
-	tx := db.Begin()
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-
-	finished.ExpectAmount = 0
-	finished.Name = ""
-	finished.FinishedManage = nil
-
-	err = tx.Updates(&finished).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return finished, err
-}
-
+// VoidProduction 作废报工
 func VoidProduction(id int, username string) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
 
-	data, err := GetFinishedById(id)
+	production, err := GetProductionById(id)
 	if err != nil {
 		return err
 	}
-	if data == nil {
-		return errors.New("user does not exist")
+	if production == nil {
+		return errors.New("报工单不存在")
+	}
+	production.Finished, err = GetFinishedById(production.FinishedId)
+	if err != nil {
+		return err
 	}
 
-	if data.Status == 2 || data.Status == 3 {
-		return errors.New("finished has been finished, can not update")
+	if production.Status == 2 || production.Status == 3 {
+		return errors.New("已完工或以作废，无法修改")
 	}
 
 	db := global.Db
@@ -178,51 +147,53 @@ func VoidProduction(id int, username string) error {
 		}
 	}()
 
-	// 扣除配料库存
-	finishedManage, err := GetFinishedManageById(data.FinishedManageId)
+	// 返还配料库存
+	consumeList, err := GetConsumeByProduction(production.ID)
 	if err != nil {
 		return err
 	}
-	for _, material := range finishedManage.Material {
-		err = FinishedSaveInBound(tx, &models.IngredientInBound{
+	for _, consume := range consumeList {
+		// 添加配料库存
+		inBound := &models.IngredientInBound{
 			BaseModel: models.BaseModel{
+				ID:       *consume.InBoundId,
 				Operator: username,
 			},
-			IngredientId:     material.IngredientStock.IngredientId,
-			StockNum:         material.Quantity * float64(data.ExpectAmount),
-			StockUnit:        material.IngredientStock.StockUnit,
-			StockUser:        username,
-			StockTime:        time.Now(),
-			OperationType:    "入库",
-			Balance:          material.Quantity * float64(data.ExpectAmount),
-			OperationDetails: fmt.Sprintf("报工生产【%s】作废重新入库", data.Name),
-		})
+			IngredientId: consume.IngredientId,
+			StockUnit:    consume.StockUnit,
+			StockNum:     -consume.StockNum,
+		}
+		err = SaveStockByInBound(tx, inBound)
 		if err != nil {
 			return err
 		}
+
+		// 添加配料消耗表
+		err = SaveConsumeByInBound(tx, inBound,
+			fmt.Sprintf("报工生产【%s】作废重新入库", production.Finished.Name))
 	}
 
-	data.Operator = username
-	data.Status = 3
+	production.Operator = username
+	production.Status = 3
 
-	return tx.Updates(&data).Error
+	return tx.Updates(&production).Error
 }
 
+// FinishProduction 完成报工
 func FinishProduction(id, amount int, username string) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
 
-	data, err := GetFinishedById(id)
+	production, err := GetProductionById(id)
 	if err != nil {
 		return err
 	}
-	if data == nil {
-		return errors.New("user does not exist")
+	if production == nil {
+		return errors.New("报工单不存在")
 	}
-
-	if data.Status == 2 || data.Status == 3 {
-		return errors.New("finished has been finished, can not update")
+	if production.Status == 2 || production.Status == 3 {
+		return errors.New("已完工或以作废，无法修改")
 	}
 
 	db := global.Db
@@ -235,148 +206,26 @@ func FinishProduction(id, amount int, username string) error {
 		}
 	}()
 
-	data.Operator = username
-	data.Status = 2
-	data.ActualAmount = amount
-	data.Ratio = (float64(data.ActualAmount) / float64(data.ExpectAmount)) * float64(100)
+	production.Operator = username
+	production.Status = 2
+	production.ActualAmount = amount
+	production.Ratio = (float64(production.ActualAmount) / float64(production.ExpectAmount)) * float64(100)
 	ft := time.Now()
-	data.FinishTime = &ft
-	data.OperationDetails = fmt.Sprintf("生产完工")
-	data.Balance = data.ActualAmount
-	data.Price = data.Cost / float64(data.ActualAmount)
+	production.FinishTime = &ft
 
-	err = SaveFinishedStockByInBound(tx, data)
+	// 添加成品库存
+	err = SaveStockByProduction(tx, production)
 	if err != nil {
 		return err
 	}
 
-	return tx.Updates(&data).Error
-}
-
-func DelProduction(id int, username string) error {
-	if id == 0 {
-		return errors.New("id is 0")
-	}
-
-	data, err := GetFinishedById(id)
-	if err != nil {
-		return err
-	}
-	if data == nil {
-		return errors.New("user does not exist")
-	}
-
-	if data.Status == 2 || data.Status == 3 {
-		return errors.New("finished has been finished, can not update")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
+	// 添加成品出入库信息
+	err = SaveConsumeByProduction(tx, production)
 	if err != nil {
 		return err
 	}
 
-	db := global.Db
-	tx := db.Begin()
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-
-	// 扣除配料库存
-	finishedManage, err := GetFinishedManageById(data.FinishedManageId)
-	if err != nil {
-		return err
-	}
-	for _, material := range finishedManage.Material {
-		err = FinishedSaveInBound(tx, &models.IngredientInBound{
-			BaseModel: models.BaseModel{
-				Operator: username,
-			},
-			IngredientId:     material.IngredientStock.IngredientId,
-			StockNum:         material.Quantity * float64(data.ExpectAmount),
-			StockUnit:        material.IngredientStock.StockUnit,
-			StockUser:        username,
-			StockTime:        time.Now(),
-			OperationType:    "入库",
-			Balance:          material.Quantity * float64(data.ExpectAmount),
-			OperationDetails: fmt.Sprintf("报工生产【%s】删除重新入库", data.Name),
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Delete(&data).Error
-}
-
-func ProductSaveProduction(tx *gorm.DB, finished *models.Finished) error {
-	manage, err := GetFinishedManageById(finished.FinishedManageId)
-	if err != nil {
-		return err
-	}
-
-	finished.FinishedManage = manage
-
-	err = SaveFinishedStockByInBound(tx, finished)
-	if err != nil {
-		return err
-	}
-	err = tx.Model(&models.Finished{}).Create(finished).Error
-
-	return err
-}
-
-func UpdateProductionBalance(tx *gorm.DB, finishedId, pn int,
-	amount int) (float64, error) {
-	var cost float64
-	data := make([]models.Finished, 0)
-	db := global.Db.Model(&models.Finished{})
-	db = db.Where("finished_manage_id = ?", finishedId)
-	db = db.Where("balance > 0")
-	db = db.Order("id asc").Limit(10).Offset((pn - 1) * 10)
-	err := db.Find(&data).Error
-	if err != nil {
-		return 0, err
-	}
-	if len(data) == 0 {
-		return 0, nil
-	}
-
-	for n, _ := range data {
-		d := data[n]
-		if amount >= d.Balance {
-			cost = cost + d.Price*float64(d.Balance)
-			amount = amount - d.Balance
-			d.Balance = 0
-		} else {
-			cost = cost + d.Price*float64(amount)
-			d.Balance = d.Balance - amount
-			amount = 0
-		}
-		err = tx.Model(&models.Finished{}).
-			Where("id = ?", d.ID).
-			Update("balance", d.Balance).Error
-		if err != nil {
-			return 0, err
-		}
-		if amount == 0 {
-			break
-		}
-	}
-	if amount > 0 {
-		c, err := UpdateFinishedBalance(tx, finishedId, pn+1, amount)
-		if err != nil {
-			return 0, err
-		}
-		cost = cost + c
-	}
-
-	return cost, nil
+	return tx.Updates(&production).Error
 }
 
 func GetProductionByFinishedId(finishedId int) ([]models.FinishedProduction, int64, error) {
@@ -390,7 +239,7 @@ func GetProductionByFinishedId(finishedId int) ([]models.FinishedProduction, int
 		return nil, 0, err
 	}
 	if total == 0 {
-		return nil, 0, errors.New("成品报工不存在")
+		return nil, 0, nil
 	}
 
 	err = db.Find(&data).Error

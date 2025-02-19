@@ -83,8 +83,7 @@ func (*Role) delete(c *gin.Context) {
 		return
 	}
 
-	role.Operator = c.GetString("userName")
-	err := service.DelRole(role.ID, role.Operator)
+	err := service.DelRole(role.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

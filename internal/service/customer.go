@@ -52,7 +52,7 @@ func UpdateCustomer(customer *models.Customer) (*models.Customer, error) {
 	return customer, global.Db.Updates(&customer).Error
 }
 
-func DelCustomer(id int, username string) error {
+func DelCustomer(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -65,17 +65,10 @@ func DelCustomer(id int, username string) error {
 		return errors.New("user does not exist")
 	}
 
-	err = GetOrderByCustomer(id)
-	if err != nil {
-		return errors.New("existing orders")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
-	}
+	//err = GetOrderByCustomer(id)
+	//if err != nil {
+	//	return errors.New("existing orders")
+	//}
 
 	return global.Db.Delete(&data).Error
 }

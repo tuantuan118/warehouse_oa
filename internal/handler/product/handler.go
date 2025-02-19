@@ -84,7 +84,7 @@ func (*Product) delete(c *gin.Context) {
 	}
 
 	product.Operator = c.GetString("userName")
-	err := service.DelProduct(product.ID, product.Operator)
+	err := service.DelProduct(product.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

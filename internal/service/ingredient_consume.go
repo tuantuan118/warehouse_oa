@@ -3,22 +3,20 @@ package service
 import (
 	"errors"
 	"gorm.io/gorm"
+	"strings"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
 
 // GetConsumeList 返回出入库列表查询数据
-func GetConsumeList(name, stockUnit, begTime, endTime string,
+func GetConsumeList(ids, stockUnit, begTime, endTime string,
 	pn, pSize int) (interface{}, error) {
 
 	db := global.Db.Model(&models.IngredientConsume{})
 	totalDb := global.Db.Model(&models.IngredientConsume{})
 
-	if name != "" {
-		idList, err := GetIngredientsByName(name)
-		if err != nil {
-			return nil, err
-		}
+	if ids != "" {
+		idList := strings.Split(ids, ";")
 		db = db.Where("ingredient_id in ?", idList)
 		totalDb = totalDb.Where("ingredient_id in ?", idList)
 	}
@@ -27,15 +25,11 @@ func GetConsumeList(name, stockUnit, begTime, endTime string,
 		totalDb = totalDb.Where("stock_unit = ?", stockUnit)
 	}
 	if begTime != "" && endTime != "" {
-		db = db.Where("DATE_FORMAT(stock_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
-		totalDb = totalDb.Where("DATE_FORMAT(stock_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
-	var cost float64
-	if err := totalDb.Select("SUM(cost)").Scan(&cost).Error; err != nil {
-		return nil, err
-	}
-
+	cost, err := GetConsumeAllCost()
 	db = db.Preload("Ingredient")
 
 	var total int64
@@ -49,7 +43,7 @@ func GetConsumeList(name, stockUnit, begTime, endTime string,
 	}
 
 	data := make([]models.IngredientConsume, 0)
-	err := db.Find(&data).Error
+	err = db.Find(&data).Error
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +59,7 @@ func GetConsumeList(name, stockUnit, begTime, endTime string,
 }
 
 // SaveConsumeByInBound 通过入库表来保存消耗表
-func SaveConsumeByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
+func SaveConsumeByInBound(db *gorm.DB, inBound *models.IngredientInBound, details string) error {
 	if inBound.IngredientId == nil && *inBound.IngredientId == 0 {
 		return errors.New("配料ID错误")
 	}
@@ -75,8 +69,10 @@ func SaveConsumeByInBound(db *gorm.DB, inBound *models.IngredientInBound) error 
 	if inBound.StockUnit == 0 {
 		return errors.New("配料单位错误")
 	}
-	if inBound.UnitPrice == 0 {
-		return errors.New("配料价格错误")
+
+	var b bool
+	if details == "配料入库" {
+		b = true
 	}
 
 	_, err := SaveConsume(db, &models.IngredientConsume{
@@ -87,27 +83,30 @@ func SaveConsumeByInBound(db *gorm.DB, inBound *models.IngredientInBound) error 
 		InBoundId:        &inBound.ID,
 		StockNum:         inBound.StockNum,
 		StockUnit:        inBound.StockUnit,
-		OperationType:    true,
-		OperationDetails: "配料入库",
+		OperationType:    b,
+		OperationDetails: details,
 	})
 
 	return err
 }
 
+// GetConsumeByProduction 根据报工ID查找消耗表
+func GetConsumeByProduction(id int) ([]*models.IngredientConsume, error) {
+	var dataList []*models.IngredientConsume
+
+	err := global.Db.Model(&models.IngredientConsume{}).
+		Where("production_id = ?", id).
+		Find(&dataList).Error
+
+	return dataList, err
+}
+
 // SaveConsume 保存消耗表
 func SaveConsume(db *gorm.DB, consume *models.IngredientConsume) (*models.IngredientConsume, error) {
-	ingredients, err := GetIngredientsById(*consume.IngredientId)
+	_, err := GetIngredientsById(*consume.IngredientId)
 	if err != nil {
 		return nil, err
 	}
-
-	inBound, err := GetInBoundById(*consume.InBoundId)
-	if err != nil {
-		return nil, err
-	}
-
-	consume.Ingredient = ingredients
-	consume.InBound = inBound
 
 	err = db.Model(&models.IngredientConsume{}).Create(&consume).Error
 
@@ -128,73 +127,16 @@ func DelConsumeByInBound(db *gorm.DB, id int) error {
 	return err
 }
 
-// UpdateInBoundBalance 更改余量接口（改到消耗表）
-func UpdateInBoundBalance(tx *gorm.DB, stock *models.IngredientStock, pn int,
-	amount float64) (float64, error) {
+// GetConsumeAllCost 获取全部消耗成本
+func GetConsumeAllCost() (string, error) {
+	var cost string
+	err := global.Db.Raw(`SELECT
+		sum(tb_ingredient_in_bound.unit_price * tb_ingredient_consume.stock_num) AS cost
+		FROM
+		tb_ingredient_consume
+		JOIN
+		tb_ingredient_in_bound ON tb_ingredient_in_bound.id = tb_ingredient_consume.ingredient_id 
+		WHERE operation_type = FALSE;`).First(&cost).Error
 
-	//var cost float64
-	//data := make([]models.IngredientInBound, 0)
-	//db := global.Db.Model(&models.IngredientInBound{})
-	//db = db.Where("ingredient_id = ?", stock.IngredientId)
-	//db = db.Where("stock_unit = ?", stock.StockUnit)
-	//db = db.Where("balance > 0")
-	//db = db.Order("id asc").Limit(10).Offset((pn - 1) * 10)
-	//err := db.Find(&data).Error
-	//if err != nil {
-	//	return 0, err
-	//}
-	//if len(data) == 0 {
-	//	return 0, nil
-	//}
-	//
-	//for n, _ := range data {
-	//	d := &data[n]
-	//
-	//	if amount >= d.Balance {
-	//		cost = cost + d.Price*d.Balance
-	//		amount = amount - d.Balance
-	//		d.Balance = 0
-	//	} else {
-	//		cost = cost + d.Price*amount
-	//		d.Balance = d.Balance - amount
-	//		amount = 0
-	//	}
-	//
-	//	err = tx.Model(&models.IngredientInBound{}).
-	//		Where("id = ?", d.ID).
-	//		Update("balance", d.Balance).Error
-	//	if err != nil {
-	//		return 0, err
-	//	}
-	//	if amount == 0 {
-	//		continue
-	//	}
-	//}
-	//if amount > 0 {
-	//	c, err := UpdateInBoundBalance(tx, stock, pn+1, amount)
-	//	if err != nil {
-	//		return 0, err
-	//	}
-	//	cost = cost + c
-	//}
-	//
-	//return cost, nil
-}
-
-// FinishedSaveInBound 成品调用接口 （应该改到消耗表）
-func FinishedSaveInBound(tx *gorm.DB, inBound *models.IngredientInBound) error {
-	//ingredients, err := GetIngredientsById(*inBound.IngredientId)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//inBound.Ingredient = ingredients
-	//
-	//err = SaveStockByInBound(tx, inBound)
-	//if err != nil {
-	//	return err
-	//}
-	//err = tx.Model(&models.IngredientInBound{}).Create(inBound).Error
-	//
-	//return nil
+	return cost, err
 }

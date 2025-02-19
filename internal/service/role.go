@@ -44,7 +44,7 @@ func UpdateRole(role *models.Role) (*models.Role, error) {
 	return role, global.Db.Save(&role).Error
 }
 
-func DelRole(id int, username string) error {
+func DelRole(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -55,13 +55,6 @@ func DelRole(id int, username string) error {
 	}
 	if data == nil {
 		return errors.New("role does not exist")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
 	}
 
 	return global.Db.Delete(&data).Error

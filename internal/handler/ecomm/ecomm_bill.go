@@ -82,8 +82,7 @@ func (*BillHandler) delete(c *gin.Context) {
 		return
 	}
 
-	eCommBill.Operator = c.GetString("userName")
-	err := service.DelECommBill(eCommBill.ID, eCommBill.Operator)
+	err := service.DelECommBill(eCommBill.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

@@ -82,8 +82,7 @@ func (*FastBillHandler) delete(c *gin.Context) {
 		return
 	}
 
-	fastBill.Operator = c.GetString("userName")
-	err := service.DelFastBill(fastBill.ID, fastBill.Operator)
+	err := service.DelFastBill(fastBill.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

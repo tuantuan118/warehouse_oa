@@ -18,8 +18,7 @@ func InitProductionRouter(router *gin.RouterGroup) {
 	productionRouter.GET("list", p.list)
 	productionRouter.GET("outList", p.outList)
 	productionRouter.POST("add", p.add)
-	productionRouter.POST("update", p.update)
-	productionRouter.POST("delete", p.delete)
+	//productionRouter.POST("update", p.update)
 	productionRouter.POST("void", p.void)
 	productionRouter.POST("finish", p.finish)
 }
@@ -62,41 +61,23 @@ func (*Production) add(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Production) update(c *gin.Context) {
-	production := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(production); err != nil {
-		// 如果解析失败，返回 400 错误和错误信息
-		handler.BadRequest(c, err.Error())
-		return
-	}
-
-	production.Operator = c.GetString("userName")
-	data, err := service.UpdateFinished(production)
-	if err != nil {
-		handler.InternalServerError(c, err)
-		return
-	}
-
-	handler.Success(c, data)
-}
-
-func (*Production) delete(c *gin.Context) {
-	production := &models.FinishedProduction{}
-	if err := c.ShouldBindJSON(production); err != nil {
-		// 如果解析失败，返回 400 错误和错误信息
-		handler.BadRequest(c, err.Error())
-		return
-	}
-
-	production.Operator = c.GetString("userName")
-	err := service.DelFinished(production.ID, production.Operator)
-	if err != nil {
-		handler.InternalServerError(c, err)
-		return
-	}
-
-	handler.Success(c, nil)
-}
+//func (*Production) update(c *gin.Context) {
+//	production := &models.FinishedProduction{}
+//	if err := c.ShouldBindJSON(production); err != nil {
+//		// 如果解析失败，返回 400 错误和错误信息
+//		handler.BadRequest(c, err.Error())
+//		return
+//	}
+//
+//	production.Operator = c.GetString("userName")
+//	data, err := service.UpdateProduction(production)
+//	if err != nil {
+//		handler.InternalServerError(c, err)
+//		return
+//	}
+//
+//	handler.Success(c, data)
+//}
 
 func (*Production) void(c *gin.Context) {
 	production := &models.FinishedProduction{}
@@ -107,7 +88,7 @@ func (*Production) void(c *gin.Context) {
 	}
 
 	production.Operator = c.GetString("userName")
-	err := service.VoidFinished(production.ID, production.Operator)
+	err := service.VoidProduction(production.ID, production.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -125,7 +106,7 @@ func (*Production) finish(c *gin.Context) {
 	}
 
 	production.Operator = c.GetString("userName")
-	err := service.FinishFinished(production.ID, production.ActualAmount, production.Operator)
+	err := service.FinishProduction(production.ID, production.ActualAmount, production.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

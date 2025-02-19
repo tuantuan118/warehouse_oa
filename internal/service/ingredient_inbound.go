@@ -46,10 +46,7 @@ func GetInBoundList(name, stockUnit, begTime, endTime string,
 	if err := totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
 		return nil, err
 	}
-	var cost float64
-	if err := totalDb.Select("SUM(cost)").Scan(&cost).Error; err != nil {
-		return nil, err
-	}
+
 	// 未结金额
 	unFinishPrice := totalPrice - finishPrice
 
@@ -96,10 +93,6 @@ func GetInBoundList(name, stockUnit, begTime, endTime string,
 			FinishPriceList: make([]map[string]string, 0),
 		}
 
-		if d.PaymentHistory == "" {
-			continue
-		}
-
 		fpl := strings.Split(d.PaymentHistory, ";")
 		for _, f := range fpl {
 			fp := strings.Split(f, "&")
@@ -122,7 +115,6 @@ func GetInBoundList(name, stockUnit, begTime, endTime string,
 		"sumTotalPrice":    totalPrice,
 		"sumUnFinishPrice": unFinishPrice,
 		"sumFinishPrice":   finishPrice,
-		"cost":             cost,
 	}, err
 
 }
@@ -143,6 +135,7 @@ func GetInBoundById(id int) (*models.IngredientInBound, error) {
 // SaveInBound 保存
 func SaveInBound(inBound *models.IngredientInBound) (*models.IngredientInBound, error) {
 	// 获取配料ID
+	logrus.Infoln("inbound:", *inBound.IngredientId)
 	ingredients, err := GetIngredientsById(*inBound.IngredientId)
 	if err != nil {
 		return nil, err
@@ -171,12 +164,14 @@ func SaveInBound(inBound *models.IngredientInBound) (*models.IngredientInBound, 
 		return nil, err
 	}
 
+	// 添加配料库存
 	err = SaveStockByInBound(tx, inBound)
 	if err != nil {
 		return nil, err
 	}
 
-	err = SaveConsumeByInBound(tx, inBound)
+	// 添加配料消耗表
+	err = SaveConsumeByInBound(tx, inBound, "配料入库")
 
 	return inBound, err
 }
@@ -225,18 +220,6 @@ func UpdateInBound(inBound *models.IngredientInBound) (*models.IngredientInBound
 		return nil, err
 	}
 
-	inBound.StockNum = inBound.StockNum - oldData.StockNum
-
-	// 从库存中 扣除旧数据的数量，新增新数据的数量
-	err = DeductStockByInBound(tx, oldData)
-	if err != nil {
-		if err.Error() == "配料不足" {
-			return nil, errors.New("当前配料的库存已被使用，修改可能影响成本计算")
-		}
-		return nil, err
-	}
-
-	err = SaveStockByInBound(tx, inBound)
 	return inBound, err
 }
 
@@ -266,16 +249,20 @@ func DelInBound(id int, username string) error {
 		}
 	}()
 
-	err = tx.Delete(&data).Error
+	err = tx.Where("in_bound_id = ?", data.ID).Delete(&models.IngredientConsume{}).Error
 	if err != nil {
 		return err
 	}
 
-	// 扣除库存
-	err = DeductStockByInBound(tx, data)
+	err = tx.Where("in_bound_id = ?", data.ID).Delete(&models.IngredientStock{}).Error
+	if err != nil {
+		return err
+	}
 
-	// 删除出入库信息
-	err = DelConsumeByInBound(tx, data.ID)
+	err = tx.Delete(&data).Error
+	if err != nil {
+		return err
+	}
 
 	return err
 }
@@ -393,7 +380,7 @@ func FinishInBound(id int, totalPrice float64, paymentTime, operator string) (*m
 	}
 	data.Operator = operator
 
-	return data, global.Db.Select("FinishPrice", "FinishPriceStr",
+	return data, global.Db.Select("FinishPrice", "PaymentHistory",
 		"Operator", "Status").Updates(&data).Error
 }
 

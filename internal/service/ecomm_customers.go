@@ -52,7 +52,7 @@ func UpdateECommCustomers(eCommECommCustomers *models.ECommCustomers) (*models.E
 	return eCommECommCustomers, global.Db.Updates(&eCommECommCustomers).Error
 }
 
-func DelECommCustomers(id int, username string) error {
+func DelECommCustomers(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -63,13 +63,6 @@ func DelECommCustomers(id int, username string) error {
 	}
 	if data == nil {
 		return errors.New("user does not exist")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
 	}
 
 	return global.Db.Delete(&data).Error

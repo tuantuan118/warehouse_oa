@@ -76,13 +76,6 @@ func DelUser(id int, username string) error {
 		return errors.New("user does not exist")
 	}
 
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
-	}
-
 	return global.Db.Delete(&data).Error
 }
 

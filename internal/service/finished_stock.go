@@ -2,29 +2,52 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"gorm.io/gorm"
 	"strings"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
 
-func GetFinishedStockList(finished *models.FinishedStock,
-	begReportingTime, endReportingTime string,
+// GetFinishedStockList 查询库存列表接口
+func GetFinishedStockList(ids string, begReportingTime, endReportingTime string,
 	pn, pSize int) (interface{}, error) {
-	db := global.Db.Model(&models.FinishedStock{})
-	db.Preload("FinishedManage")
 
-	if finished.Name != "" {
-		slice := strings.Split(finished.Name, ";")
-		db = db.Where("name in ?", slice)
+	db := global.Db.Model(&models.FinishedStock{})
+	db = db.Select("finished_id, sum(amount) as amount, max(add_time) as add_time")
+	db = db.Group("finished_id")
+	db.Preload("Finished")
+
+	if ids != "" {
+		idList := strings.Split(ids, ";")
+		db = db.Where("finished_id in ?", idList)
 	}
 	if begReportingTime != "" && endReportingTime != "" {
 		db = db.Where("add_time BETWEEN ? AND ?", begReportingTime, endReportingTime)
 	}
 
-	return Pagination(db, []models.FinishedStock{}, pn, pSize)
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	if pn != 0 && pSize != 0 {
+		offset := (pn - 1) * pSize
+		db = db.Order("add_time desc").Limit(pSize).Offset(offset)
+	}
+
+	var data []models.FinishedStock
+	err := db.Find(&data).Error
+
+	return map[string]interface{}{
+		"data":       data,
+		"pageNo":     pn,
+		"pageSize":   pSize,
+		"totalCount": total,
+	}, err
 }
 
+// GetFinishedStockById 通过ID获取库存
 func GetFinishedStockById(id int) (*models.FinishedStock, error) {
 	db := global.Db.Model(&models.FinishedStock{})
 
@@ -37,79 +60,99 @@ func GetFinishedStockById(id int) (*models.FinishedStock, error) {
 	return data, err
 }
 
-// GetFinishedStockByIdList 获取库存id列表
-//func GetFinishedStockByIdList(ids string) ([]int, error) {
-//	slice := strings.Split(ids, ";")
-//
-//	db := global.Db.Model(&models.FinishedStock{})
-//	data := make([]int, 0)
-//	err := db.Select("finished_manage_id").Where("id in ?", slice).Find(&data).Error
-//	if errors.Is(err, gorm.ErrRecordNotFound) {
-//		return nil, errors.New("user does not exist")
-//	}
-//
-//	return data, err
-//}
-
-func SaveFinishedStockByInBound(tx *gorm.DB, finished *models.Finished) error {
-	var err error
-	var total int64
-	db := global.Db.Model(&models.FinishedStock{})
-
-	db = db.Where("finished_manage_id = ?", finished.FinishedManageId)
-	db.Count(&total)
-
-	if total == 0 {
-		_, err := SaveFinishedStock(&models.FinishedStock{
-			BaseModel: models.BaseModel{
-				Operator: finished.Operator,
-				Remark:   finished.Remark,
-			},
-			Name:             finished.Name,
-			Amount:           float64(finished.ActualAmount),
-			FinishedManageId: finished.FinishedManageId,
-		})
-		return err
+// SaveStockByProduction 通过报工保存库存
+func SaveStockByProduction(db *gorm.DB, production *models.FinishedProduction) error {
+	if production.FinishedId == 0 {
+		return errors.New("成品ID错误")
 	}
 
-	data := &models.FinishedStock{}
-	err = db.First(&data).Error
+	_, err := SaveFinishedStock(db, &models.FinishedStock{
+		BaseModel: models.BaseModel{
+			Operator: production.Operator,
+		},
+		FinishedId:   production.FinishedId,
+		ProductionId: production.ID,
+		Amount:       float64(production.ActualAmount),
+	})
 
-	if err != nil {
-		return err
-	}
-	data.Amount += float64(finished.ActualAmount)
-
-	if data.Amount < 0 {
-		return errors.New("insufficient stock")
-	}
-
-	return tx.Updates(&data).Error
+	return err
 }
 
-func SaveFinishedStock(finished *models.FinishedStock) (*models.FinishedStock, error) {
+// SaveFinishedStock 保存成品库存
+func SaveFinishedStock(db *gorm.DB, finished *models.FinishedStock) (*models.FinishedStock, error) {
 	if finished.Amount < 0 {
-		return nil, errors.New("insufficient stock")
+		return nil, errors.New("成品数量错误")
 	}
 
-	err := global.Db.Model(&models.FinishedStock{}).Create(&finished).Error
+	err := db.Model(&models.FinishedStock{}).Create(&finished).Error
 
 	return finished, err
 }
 
-// GetFinishedStockFieldList 获取字段列表
-func GetFinishedStockFieldList(field string) ([]string, error) {
-	db := global.Db.Model(&models.FinishedStock{})
-	switch field {
-	case "name":
-		db = db.Select("name")
-	default:
-		return nil, errors.New("field not exist")
-	}
-	fields := make([]string, 0)
-	if err := db.Scan(&fields).Error; err != nil {
-		return nil, err
-	}
+// DeductFinishedStock 扣除库存, 并且新增消耗表
+func DeductFinishedStock(db *gorm.DB, order *models.Order,
+	finishedStock *models.FinishedStock) error {
 
-	return fields, nil
+	var err error
+	for {
+		if finishedStock.Amount == 0 {
+			break
+		}
+
+		stock := &models.FinishedStock{}
+		err = global.Db.Model(&models.FinishedStock{}).
+			Where("finished_id = ?", finishedStock.FinishedId).
+			Where("amount > ?", 0).
+			Order("add_time asc").First(&stock).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("库存不足")
+		}
+		if err != nil {
+			return err
+		}
+
+		if stock.Amount > finishedStock.Amount {
+			// 更新库存
+			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
+				BaseModel: models.BaseModel{
+					Operator: order.Operator,
+				},
+				OrderId:          &order.ID,
+				FinishedId:       finishedStock.FinishedId,
+				ProductionId:     finishedStock.ProductionId,
+				StockNum:         0 - finishedStock.Amount,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("【%s】销售出库", order.OrderNumber),
+			})
+
+			stock.Amount -= finishedStock.Amount
+			err = db.Select("amount").Updates(&stock).Error
+			if err != nil {
+				return err
+			}
+
+			finishedStock.Amount = 0
+		} else {
+			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
+				BaseModel: models.BaseModel{
+					Operator: order.Operator,
+				},
+				OrderId:          &order.ID,
+				FinishedId:       finishedStock.FinishedId,
+				ProductionId:     finishedStock.ProductionId,
+				StockNum:         0 - finishedStock.Amount,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("【%s】销售出库", order.OrderNumber),
+			})
+
+			finishedStock.Amount -= stock.Amount
+
+			// 删除库存
+			err = db.Delete(&stock).Error
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
 }

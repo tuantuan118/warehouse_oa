@@ -85,8 +85,7 @@ func (*Permission) delete(c *gin.Context) {
 		return
 	}
 
-	permission.Operator = c.GetString("userName")
-	err := service.DelPermission(permission.ID, permission.Operator)
+	err := service.DelPermission(permission.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

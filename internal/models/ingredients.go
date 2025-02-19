@@ -48,7 +48,7 @@ type IngredientConsume struct {
 	InBound          *IngredientInBound  `gorm:"foreignKey:InBoundId" json:"inBound"`
 	StockNum         float64             `gorm:"type:decimal(16,4)" json:"stockNum"`
 	StockUnit        int                 `gorm:"type:int(2)" json:"stockUnit"`
-	OperationType    bool                `gorm:"type:bool;default:true" json:"operationType"` // true表示启用，false表示禁用
+	OperationType    bool                `gorm:"type:bool" json:"operationType"` // true表示启用，false表示禁用
 	OperationDetails string              `gorm:"type:varchar(256)" json:"operationDetails"`
 }
 

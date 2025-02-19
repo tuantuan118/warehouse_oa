@@ -90,7 +90,7 @@ func UpdateGallery(gallery *models.Gallery) (*models.Gallery, error) {
 	return gallery, global.Db.Updates(&gallery).Error
 }
 
-func DelGallery(id int, username string) error {
+func DelGallery(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -101,13 +101,6 @@ func DelGallery(id int, username string) error {
 	}
 	if data == nil {
 		return errors.New("user does not exist")
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
-	if err != nil {
-		return err
 	}
 
 	saveDir := "./cos/images"

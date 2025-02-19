@@ -2,10 +2,8 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"gorm.io/gorm"
 	"strings"
-	"time"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
@@ -21,57 +19,62 @@ func GetProductList(product *models.Product, pn, pSize int) (interface{}, error)
 		db = db.Where("name in ?", slice)
 	}
 
-	db = db.Preload("FinishedManage")
+	db = db.Preload("ProductContent.Finished")
 
 	return Pagination(db, []models.Product{}, pn, pSize)
 }
 
 func GetProductById(id int) (*models.Product, error) {
 	db := global.Db.Model(&models.Product{})
+	db = db.Preload("ProductContent")
 
 	data := &models.Product{}
 	err := db.Where("id = ?", id).First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("user does not exist")
+		return nil, errors.New("产品不存在")
 	}
 
 	return data, err
 }
 
+func GetProductByName(name string) (*models.Product, error) {
+	db := global.Db.Model(&models.Product{})
+	db = db.Preload("ProductContent")
+
+	data := &models.Product{}
+	err := db.Where("name = ?", name).First(&data).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("产品不存在")
+	}
+
+	return data, err
+}
+
+// SaveProduct 创建产品
 func SaveProduct(product *models.Product) (*models.Product, error) {
 	err := IfProductByName(product.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	finishedManage, err := GetFinishedManageById(product.FinishedManageId)
-	if err != nil {
-		return nil, err
+	if product.ProductContent == nil || len(product.ProductContent) == 0 {
+		return nil, errors.New("产品列表不能为空")
 	}
 
-	today := time.Now().Format("20060102")
-	total, err := getTodayProductCount()
-	if err != nil {
-		return nil, err
+	// 判断配料是否都存在
+	for _, c := range product.ProductContent {
+		c.Finished, err = GetFinishedById(c.FinishedId)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	product.OrderNumber = fmt.Sprintf("QY%s%d", today, total+10001)
-	product.FinishedManage = finishedManage
 	err = global.Db.Model(&models.Product{}).Create(product).Error
 
 	return product, err
 }
 
-func getTodayProductCount() (int64, error) {
-	today := time.Now().Format("2006-01-02")
-
-	var total int64
-	err := global.Db.Model(&models.Product{}).Where(
-		"DATE_FORMAT(add_time, '%Y-%m-%d') >= ?", today).Count(&total).Error
-
-	return total, err
-}
-
+// UpdateProduct 修改产品
 func UpdateProduct(product *models.Product) (*models.Product, error) {
 	if product.ID == 0 {
 		return nil, errors.New("id is 0")
@@ -81,10 +84,38 @@ func UpdateProduct(product *models.Product) (*models.Product, error) {
 		return nil, err
 	}
 
-	return product, global.Db.Updates(&product).Error
+	if product.ProductContent == nil || len(product.ProductContent) == 0 {
+		return nil, errors.New("产品列表不能为空")
+	}
+
+	// 判断成品是否都存在
+	for _, c := range product.ProductContent {
+		c.Finished, err = GetFinishedById(c.FinishedId)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	db := global.Db
+	tx := db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// 删除关联
+	err = RemoveFinished(tx, product.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return product, tx.Updates(&product).Error
 }
 
-func DelProduct(id int, username string) error {
+func DelProduct(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
@@ -93,18 +124,24 @@ func DelProduct(id int, username string) error {
 	if err != nil {
 		return err
 	}
-	if data == nil {
-		return errors.New("user does not exist")
-	}
 
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
+	db := global.Db
+	tx := db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// 删除关联
+	err = RemoveFinished(tx, id)
 	if err != nil {
 		return err
 	}
 
-	return global.Db.Delete(&data).Error
+	return tx.Delete(&data).Error
 }
 
 // GetProductFieldList 获取字段列表
@@ -133,8 +170,15 @@ func IfProductByName(name string) error {
 		return err
 	}
 	if count > 0 {
-		return errors.New("user name already exists")
+		return errors.New("产品名已存在")
 	}
 
 	return nil
+}
+
+// RemoveFinished 删除关联的成品
+func RemoveFinished(db *gorm.DB, productId int) error {
+	return db.Model(&models.ProductContent{}).Where(
+		"product_id = ?", productId).Delete(&models.ProductContent{}).Error
+
 }

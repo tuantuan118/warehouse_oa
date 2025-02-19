@@ -80,19 +80,12 @@ func UpdatePermission(permission *models.Permission) (*models.Permission, error)
 	return permission, global.Db.Save(&permission).Error
 }
 
-func DelPermission(id int, username string) error {
+func DelPermission(id int) error {
 	if id == 0 {
 		return errors.New("id is 0")
 	}
 
 	data, err := GetPermissionById(id)
-	if err != nil {
-		return err
-	}
-
-	data.Operator = username
-	data.IsDeleted = true
-	err = global.Db.Updates(&data).Error
 	if err != nil {
 		return err
 	}

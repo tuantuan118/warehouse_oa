@@ -3,8 +3,8 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-	"time"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
@@ -12,7 +12,7 @@ import (
 // GetStockList 获取库存列表
 func GetStockList(name string, pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.IngredientStock{})
-	db = db.Select("ingredient_id, stock_unit, sum(stock_num) as stock_num")
+	db = db.Select("ingredient_id, stock_unit, sum(stock_num) as stock_num, max(add_time) as add_time")
 	db = db.Group("ingredient_id, stock_unit")
 
 	if name != "" {
@@ -24,7 +24,25 @@ func GetStockList(name string, pn, pSize int) (interface{}, error) {
 	}
 	db = db.Preload("Ingredient")
 
-	return Pagination(db, []models.IngredientStock{}, pn, pSize)
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	if pn != 0 && pSize != 0 {
+		offset := (pn - 1) * pSize
+		db = db.Order("add_time desc").Limit(pSize).Offset(offset)
+	}
+
+	var data []models.IngredientStock
+	err := db.Find(&data).Error
+
+	return map[string]interface{}{
+		"data":       data,
+		"pageNo":     pn,
+		"pageSize":   pSize,
+		"totalCount": total,
+	}, err
 }
 
 // GetStockName 获取库存的名字和单位
@@ -36,6 +54,21 @@ func GetStockName() (interface{}, error) {
 	err := db.Find(&data).Error
 
 	return data, err
+}
+
+// IfStockByIdAndUnit 查询配料和单位存不存在 存在true 不存在 false
+func IfStockByIdAndUnit(id int, unit int) (bool, error) {
+	var total int64
+	db := global.Db.Model(&models.IngredientStock{})
+	err := db.Where("ingredient_id = ? and stock_unit = ?", id, unit).Count(&total).Error
+	if err != nil {
+		return true, err
+	}
+	if total == 0 {
+		return false, nil
+	} else {
+		return true, nil
+	}
 }
 
 func GetStockById(id int) (*models.IngredientStock, error) {
@@ -50,7 +83,7 @@ func GetStockById(id int) (*models.IngredientStock, error) {
 	return data, err
 }
 
-func GetStockByIngredient(ingredientId, stockUnit int, unitPrice float64) (*models.IngredientStock, error) {
+func GetStockByIngredient(ingredientId, stockUnit int) (*models.IngredientStock, error) {
 	db := global.Db.Model(&models.IngredientStock{})
 
 	if ingredientId == 0 {
@@ -58,9 +91,6 @@ func GetStockByIngredient(ingredientId, stockUnit int, unitPrice float64) (*mode
 	}
 	db = db.Where("ingredient_id = ?", ingredientId)
 	db = db.Where("stock_unit = ?", stockUnit)
-	if unitPrice != 0 {
-		db = db.Where("unit_price = ?", unitPrice)
-	}
 	db = db.Preload("Ingredient")
 
 	data := &models.IngredientStock{}
@@ -77,21 +107,13 @@ func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 	if inBound.StockUnit == 0 {
 		return errors.New("配料单位错误")
 	}
-	if inBound.UnitPrice == 0 {
-		return errors.New("配料价格错误")
-	}
-	if inBound.CreatedAt.IsZero() {
-		inBound.CreatedAt = time.Now()
-	}
 
 	_, err := SaveStock(db, &models.IngredientStock{
 		BaseModel: models.BaseModel{
-			Operator:  inBound.Operator,
-			CreatedAt: inBound.CreatedAt,
+			Operator: inBound.Operator,
 		},
 		IngredientId: inBound.IngredientId,
 		InBoundId:    &inBound.ID,
-		InBound:      inBound,
 		StockNum:     inBound.StockNum,
 		StockUnit:    inBound.StockUnit,
 	})
@@ -101,12 +123,10 @@ func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 
 // SaveStock 保存库存
 func SaveStock(db *gorm.DB, stock *models.IngredientStock) (*models.IngredientStock, error) {
-	ingredients, err := GetIngredientsById(*stock.IngredientId)
+	_, err := GetIngredientsById(*stock.IngredientId)
 	if err != nil {
 		return nil, err
 	}
-
-	stock.Ingredient = ingredients
 
 	err = db.Model(&models.IngredientStock{}).Create(&stock).Error
 
@@ -147,60 +167,71 @@ func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 
 	var err error
 	for {
+		if ingredientStock.StockNum == 0 {
+			break
+		}
+
 		stock := &models.IngredientStock{}
 		err = global.Db.Model(&models.IngredientStock{}).
 			Where("ingredient_id = ?", *ingredientStock.IngredientId).
 			Where("stock_unit = ?", ingredientStock.StockUnit).
 			Where("stock_num > ?", 0).
-			Order("created_at asc").First(&stock).Error
+			Order("add_time asc").First(&stock).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("库存不足")
+		}
 		if err != nil {
-			break
+			return err
 		}
 
-		if stock.StockUnit > ingredientStock.StockUnit {
+		logrus.Infoln(stock.StockNum)
+		logrus.Infoln(ingredientStock.StockNum)
+
+		if stock.StockNum > ingredientStock.StockNum {
 			// 更新库存
 			_, err = SaveConsume(db, &models.IngredientConsume{
-				FinishedId:   &production.FinishedId,
-				Finish:       production.Finished,
-				IngredientId: stock.IngredientId,
-				//Ingredient:   stock.Ingredient,
-				ProductionId: &production.ID,
-				Production:   production,
-				InBoundId:    stock.InBoundId,
-				//InBound:          stock,
-				StockNum:         ingredientStock.StockNum,
+				BaseModel: models.BaseModel{
+					Operator: production.Operator,
+				},
+				FinishedId:       &production.FinishedId,
+				IngredientId:     stock.IngredientId,
+				ProductionId:     &production.ID,
+				InBoundId:        stock.InBoundId,
+				StockNum:         0 - ingredientStock.StockNum,
 				StockUnit:        ingredientStock.StockUnit,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
 			})
 
-			stock.StockUnit -= ingredientStock.StockUnit
-			err = db.Updates(&stock).Error
+			stock.StockNum -= ingredientStock.StockNum
+			err = db.Select("stock_num").Updates(&stock).Error
 			if err != nil {
 				return err
 			}
+
+			ingredientStock.StockNum = 0
 		} else {
 			_, err = SaveConsume(db, &models.IngredientConsume{
-				FinishedId:   &production.FinishedId,
-				Finish:       production.Finished,
-				IngredientId: stock.IngredientId,
-				//Ingredient:   stock.Ingredient,
-				ProductionId: &production.ID,
-				Production:   production,
-				InBoundId:    stock.InBoundId,
-				//InBound:          stock,
-				StockNum:         ingredientStock.StockNum,
+				BaseModel: models.BaseModel{
+					Operator: production.Operator,
+				},
+				FinishedId:       &production.FinishedId,
+				IngredientId:     stock.IngredientId,
+				ProductionId:     &production.ID,
+				InBoundId:        stock.InBoundId,
+				StockNum:         0 - ingredientStock.StockNum,
 				StockUnit:        ingredientStock.StockUnit,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
 			})
+
+			ingredientStock.StockNum -= stock.StockNum
 
 			// 删除库存
 			err = db.Delete(&stock).Error
 			if err != nil {
 				return err
 			}
-			ingredientStock.StockUnit -= stock.StockUnit
 		}
 	}
 	return err
@@ -217,7 +248,7 @@ func DeductStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error 
 	if inBound.UnitPrice == 0 {
 		return errors.New("配料价格错误")
 	}
-	stock, err := GetStockByIngredient(*inBound.IngredientId, inBound.StockUnit, inBound.UnitPrice)
+	stock, err := GetStockByIngredient(*inBound.IngredientId, inBound.StockUnit)
 	if err != nil {
 		return err
 	}

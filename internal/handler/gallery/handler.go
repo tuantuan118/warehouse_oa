@@ -64,8 +64,7 @@ func (*Gallery) delete(c *gin.Context) {
 		return
 	}
 
-	gallery.Operator = c.GetString("userName")
-	err := service.DelGallery(gallery.ID, gallery.Operator)
+	err := service.DelGallery(gallery.ID)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
