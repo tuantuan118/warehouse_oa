@@ -22,9 +22,9 @@ func InitOrderRouter(router *gin.RouterGroup) {
 	orderRouter.GET("exportExecl", o.exportExecl)
 	orderRouter.POST("add", o.add)
 	orderRouter.POST("update", o.update)
-	orderRouter.POST("finishOrder", o.finishOrder)
+	orderRouter.POST("checkoutOrder", o.checkoutOrder)
 	orderRouter.POST("void", o.void)
-	orderRouter.POST("saveOutBound", o.saveOutBound)
+	orderRouter.POST("outOfStock", o.outOfStock)
 }
 
 func (*Order) list(c *gin.Context) {
@@ -86,7 +86,7 @@ func (*Order) update(c *gin.Context) {
 	handler.Success(c, data)
 }
 
-func (*Order) finishOrder(c *gin.Context) {
+func (*Order) checkoutOrder(c *gin.Context) {
 	order := struct {
 		ID          int     `form:"id" json:"id" binding:"required"`
 		TotalPrice  float64 `json:"totalPrice"`
@@ -101,7 +101,7 @@ func (*Order) finishOrder(c *gin.Context) {
 	}
 
 	order.Operator = c.GetString("userName")
-	data, err := service.FinishOrder(order.ID, order.TotalPrice, order.PaymentTime, order.Operator)
+	data, err := service.CheckoutOrder(order.ID, order.TotalPrice, order.PaymentTime, order.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -128,7 +128,7 @@ func (*Order) void(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
-func (*Order) saveOutBound(c *gin.Context) {
+func (*Order) outOfStock(c *gin.Context) {
 	order := &models.Order{}
 	if err := c.ShouldBindJSON(order); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
@@ -137,7 +137,7 @@ func (*Order) saveOutBound(c *gin.Context) {
 	}
 
 	order.Operator = c.GetString("userName")
-	err := service.SaveOutBound(order.ID, order.Operator)
+	err := service.OutOfStock(order.ID, order.Operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -203,7 +203,7 @@ func (*Order) exportExecl(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "application/octet-stream")
-	c.Header("Content-Disposition", `attachment; filename="配料入库.xlsx"`)
+	c.Header("Content-Disposition", `attachment; filename="订单列表.xlsx"`)
 	c.Header("Content-Transfer-Encoding", "binary")
 
 	// 将 Excel 文件写入到 HTTP 响应中

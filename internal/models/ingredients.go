@@ -46,6 +46,7 @@ type IngredientConsume struct {
 	Production       *FinishedProduction `gorm:"foreignKey:ProductionId" json:"production"`
 	InBoundId        *int                `gorm:"type:int(11)" json:"inBoundId"` // 关联入库ID
 	InBound          *IngredientInBound  `gorm:"foreignKey:InBoundId" json:"inBound"`
+	OrderId          *int                `gorm:"type:int(11)" json:"OrderId"` // 订单ID
 	StockNum         float64             `gorm:"type:decimal(16,4)" json:"stockNum"`
 	StockUnit        int                 `gorm:"type:int(2)" json:"stockUnit"`
 	OperationType    bool                `gorm:"type:bool" json:"operationType"` // true表示启用，false表示禁用

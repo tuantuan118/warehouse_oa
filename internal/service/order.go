@@ -48,7 +48,7 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 	db = db.Preload("UserList")
 	db = db.Preload("Customer")
 	db = db.Preload("Ingredient.Ingredient")
-	db = db.Preload("Finish")
+	db = db.Preload("UseFinished")
 
 	b, err := getAdmin(userId)
 	if err != nil {
@@ -111,7 +111,7 @@ func GetOrderById(id int) (*models.Order, error) {
 	db = db.Preload("UserList")
 	db = db.Preload("Customer")
 	db = db.Preload("Ingredient.Ingredient")
-	db = db.Preload("Finished")
+	db = db.Preload("UseFinished")
 	err := db.Where("id = ?", id).First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("user does not exist")
@@ -161,12 +161,11 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 	order.FinishPrice = 0
 	order.Status = 1
 
-	order.Finish = make([]models.Finished, 0)
+	order.UseFinished = make([]models.UseFinished, 0)
 	for _, p := range product.ProductContent {
-		order.Finish = append(order.Finish, models.Finished{
-			BaseModel: models.BaseModel{
-				ID: p.FinishedId,
-			},
+		order.UseFinished = append(order.UseFinished, models.UseFinished{
+			FinishedId: &p.FinishedId,
+			Quantity:   p.Quantity,
 		})
 	}
 
@@ -176,99 +175,120 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 }
 
 func UpdateOrder(order *models.Order) (*models.Order, error) {
-	//if order.ID == 0 {
-	//	return nil, errors.New("id is 0")
-	//}
-	//oldData, err := GetOrderById(order.ID)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//if oldData.Status != 1 {
-	//	return nil, errors.New("order has been finished, can not update")
-	//}
-	//
-	//if order.Price != oldData.Price || order.Amount != oldData.Amount {
-	//	totalPrice := order.Price * float64(order.Amount)
-	//	order.TotalPrice = totalPrice
-	//}
-	//
-	//order.Images = strings.Join(order.ImageList, ";")
-	//
-	//for _, ingredient := range order.Ingredient {
-	//	inventory := new(models.IngredientInventory)
-	//	inventory, err = GetInventoryById(ingredient.IngredientID)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	ingredient.OrderID = order.ID
-	//	ingredient.IngredientInventory = inventory
-	//}
-	//
-	//customer, err := GetCustomerById(order.CustomerId)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//userList := make([]models.User, 0)
-	//if order.UserList != nil || len(order.UserList) > 0 {
-	//	for _, v := range order.UserList {
-	//		user, err := GetUserById(v.ID)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		userList = append(userList, *user)
-	//	}
-	//}
-	//
-	//// 清除 UserList 关联
-	//if err := global.Db.Model(&oldData).Association("UserList").Clear(); err != nil {
-	//	return nil, err
-	//}
-	//
-	//order.UserList = userList
-	//order.Customer = customer
-	//order.OrderNumber = ""
-	//order.Name = ""
-	//order.Status = 0
-	//
-	//return order, global.Db.Updates(&order).Error
+	if order.ID == 0 {
+		return nil, errors.New("id is 0")
+	}
+	oldData, err := GetOrderById(order.ID)
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, nil
+	if oldData.Status != 1 {
+		return nil, errors.New("订单已出库，无法修改")
+	}
+
+	if order.UserList != nil || len(order.UserList) > 0 {
+		for _, v := range order.UserList {
+			_, err = GetUserById(v.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	for _, ingredient := range order.Ingredient {
+		_, err = GetIngredientsById(*ingredient.IngredientId)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, err = GetCustomerById(order.CustomerId)
+	if err != nil {
+		return nil, err
+	}
+
+	product, err := GetProductByName(order.ProductName)
+	if err != nil {
+		return nil, err
+	}
+
+	order.Images = strings.Join(order.ImageList, ";")
+	order.OrderNumber = oldData.OrderNumber
+	order.TotalPrice = order.Price * float64(order.Amount)
+	order.FinishPrice = oldData.FinishPrice
+	order.Status = oldData.Status
+
+	order.UseFinished = make([]models.UseFinished, 0)
+	for _, p := range product.ProductContent {
+		order.UseFinished = append(order.UseFinished, models.UseFinished{
+			FinishedId: &p.FinishedId,
+			Quantity:   p.Quantity,
+		})
+	}
+
+	// 清除 UserList 关联
+	if err := global.Db.Model(&oldData).Association("UserList").Clear(); err != nil {
+		return nil, err
+	}
+	// 清除 UserList 关联
+	if err := global.Db.Model(&oldData).Association("Ingredient").Clear(); err != nil {
+		return nil, err
+	}
+	// 清除 UserList 关联
+	if err := global.Db.Model(&oldData).Association("UseFinished").Clear(); err != nil {
+		return nil, err
+	}
+
+	return order, global.Db.Updates(&order).Error
 }
 
-func FinishOrder(id int, totalPrice float64, paymentTime, operator string) (*models.Order, error) {
-	//if id == 0 {
-	//	return nil, errors.New("id is 0")
-	//}
-	//data, err := GetOrderById(id)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//if data.Status != 2 {
-	//	return nil, errors.New("order has been finished, can not update")
-	//}
-	//
-	//data.UnFinishPrice = data.UnFinishPrice - totalPrice
-	//data.FinishPrice += totalPrice
-	//
-	//str := fmt.Sprintf("%s&%f;", paymentTime, totalPrice)
-	//data.FinishPriceStr += str
-	//
-	//if data.UnFinishPrice > 0 {
-	//	data.Status = 2
-	//} else {
-	//	data.Status = 3
-	//}
-	//data.Operator = operator
-	//
-	//return data, global.Db.Select("UnFinishPrice",
-	//	"FinishPrice", "FinishPriceStr", "Operator",
-	//	"Status").Updates(&data).Error
+// OutOfStock 出库
+func OutOfStock(id int, username string) error {
+	order, err := GetOrderById(id)
 
-	return nil, nil
+	db := global.Db
+	tx := db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// 修改出库状态
+	order.Status = 2
+	order.Operator = username
+
+	// 消耗成品
+	for _, u := range order.UseFinished {
+		err = DeductFinishedStock(tx, order, &models.FinishedStock{
+			FinishedId: *u.FinishedId,
+			Amount:     u.Quantity * float64(order.Amount),
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	// 消耗附加材料
+	for _, ingredient := range order.Ingredient {
+		err = DeductOrderAttach(tx, order,
+			&models.IngredientStock{
+				IngredientId: ingredient.IngredientId,
+				StockNum:     ingredient.Quantity * float64(order.Amount),
+				StockUnit:    ingredient.StockUnit,
+			})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
+
+// VoidOrder 作废
 func VoidOrder(id int, username string) error {
 	if id == 0 {
 		return errors.New("id is 0")
@@ -288,91 +308,37 @@ func VoidOrder(id int, username string) error {
 	return global.Db.Updates(&data).Error
 }
 
-// SaveOutBound 出库
-func SaveOutBound(id int, username string) error {
-	//data, err := GetOrderById(id)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//if data.Status != 1 {
-	//	return errors.New("order has been finished, can not out")
-	//}
-	//
-	//product, err := GetProductById(data.ProductId)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//manageId, err := GetFinishedManageById(product.FinishedManageId)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//db := global.Db
-	//tx := db.Begin()
-	//defer func() {
-	//	if err != nil {
-	//		tx.Rollback()
-	//	} else {
-	//		tx.Commit()
-	//	}
-	//}()
-	//ft := time.Now()
-	//finishedAmount := product.Amount * data.Amount
-	//cost, err := UpdateFinishedBalance(tx, product.FinishedManageId, 1, finishedAmount)
-	//err = ProductSaveFinished(tx, &models.Finished{
-	//	BaseModel: models.BaseModel{
-	//		Operator: username,
-	//	},
-	//	Name:             product.Name,
-	//	ActualAmount:     0 - finishedAmount,
-	//	Status:           2,
-	//	FinishTime:       &ft,
-	//	FinishedManageId: product.FinishedManageId,
-	//	FinishedManage:   manageId,
-	//	Cost:             cost,
-	//	OperationType:    "出库",
-	//	OperationDetails: fmt.Sprintf("【%s】销售出库", product.Name),
-	//})
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//for _, i := range data.Ingredient {
-	//	logrus.Infoln(i)
-	//	inventoryAmount := float64(i.Quantity)
-	//	var inBoundCost float64
-	//	inBoundCost, err = UpdateInBoundBalance(tx, i.IngredientInventory, 1, inventoryAmount)
-	//	if err != nil {
-	//		return err
-	//	}
-	//
-	//	err = FinishedSaveInBound(tx, &models.IngredientInBound{
-	//		BaseModel: models.BaseModel{
-	//			Operator: username,
-	//		},
-	//		IngredientID:     i.IngredientInventory.IngredientID,
-	//		StockNum:         float64(0 - i.Quantity),
-	//		StockUnit:        i.IngredientInventory.StockUnit,
-	//		StockUser:        username,
-	//		StockTime:        time.Now(),
-	//		OperationType:    "出库",
-	//		Cost:             inBoundCost,
-	//		OperationDetails: fmt.Sprintf("订单编号【%s】附加材料", data.OrderNumber),
-	//	})
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
-	//
-	//data.Cost = cost
-	//data.Operator = username
-	//data.Status = 2
-	//
-	//return tx.Updates(&data).Error
+// CheckoutOrder 结帐
+func CheckoutOrder(id int, totalPrice float64, paymentTime, operator string) (*models.Order, error) {
+	if id == 0 {
+		return nil, errors.New("id is 0")
+	}
+	data, err := GetOrderById(id)
+	if err != nil {
+		return nil, err
+	}
 
-	return nil
+	if data.Status != 2 {
+		return nil, errors.New("订单状态错误，无法付款")
+	}
+
+	data.FinishPrice += totalPrice
+
+	str := fmt.Sprintf("%s&%f;", paymentTime, totalPrice)
+	data.PaymentHistory += str
+
+	if data.TotalPrice-data.FinishPrice > 0 {
+		data.Status = 2
+	} else {
+		data.Status = 3
+	}
+	data.Operator = operator
+
+	return data, global.Db.Select(
+		"finish_price",
+		"payment_history",
+		"operator",
+		"status").Updates(&data).Error
 }
 
 func ExportOrder(order *models.Order) ([]byte, error) {
@@ -675,21 +641,21 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 	valueList := make([]map[string]interface{}, 0)
 	for _, v := range data {
 		valueList = append(valueList, map[string]interface{}{
-			"订单编号":  v.OrderNumber,
-			"产品名称":  v.ProductName,
-			"产品规格":  v.Specification,
+			"订单编号": v.OrderNumber,
+			"产品名称": v.ProductName,
+			"产品规格": v.Specification,
 			"单价（元）": v.Price,
-			"数量":    v.Amount,
-			"订单金额":  v.TotalPrice,
-			"已结金额":  v.FinishPrice,
-			"未结金额":  v.TotalPrice - v.FinishPrice,
+			"数量":     v.Amount,
+			"订单金额": v.TotalPrice,
+			"已结金额": v.FinishPrice,
+			"未结金额": v.TotalPrice - v.FinishPrice,
 			//"成本":    v.Cost,
-			"利润":   v.Profit,
-			"毛利率":  v.GrossMargin,
+			"利润":     v.Profit,
+			"毛利率":   v.GrossMargin,
 			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
 			"客户名称": v.Customer.Name,
 			"销售人员": v.Salesman,
-			"备注":   v.Remark,
+			"备注":     v.Remark,
 			"更新人员": v.Operator,
 			"更新时间": v.UpdatedAt,
 		})
@@ -698,7 +664,7 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		"订单金额": totalPrice,
 		"已结金额": finishPrice,
 		"未结金额": unFinishPrice,
-		"成本":   consumeCost,
+		"成本":     consumeCost,
 	})
 
 	return utils.ExportExcel(keyList, valueList)

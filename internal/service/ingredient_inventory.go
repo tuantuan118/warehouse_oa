@@ -237,6 +237,80 @@ func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 	return err
 }
 
+// DeductOrderAttach 扣除订单附加材料
+func DeductOrderAttach(db *gorm.DB, order *models.Order,
+	ingredientStock *models.IngredientStock) error {
+
+	var err error
+	for {
+		if ingredientStock.StockNum == 0 {
+			break
+		}
+
+		stock := &models.IngredientStock{}
+		err = global.Db.Model(&models.IngredientStock{}).
+			Where("ingredient_id = ?", *ingredientStock.IngredientId).
+			Where("stock_unit = ?", ingredientStock.StockUnit).
+			Where("stock_num > ?", 0).
+			Order("add_time asc").First(&stock).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("库存不足")
+		}
+		if err != nil {
+			return err
+		}
+
+		logrus.Infoln(stock.StockNum)
+		logrus.Infoln(ingredientStock.StockNum)
+
+		if stock.StockNum > ingredientStock.StockNum {
+			// 更新库存
+			_, err = SaveConsume(db, &models.IngredientConsume{
+				BaseModel: models.BaseModel{
+					Operator: order.Operator,
+				},
+				IngredientId:     stock.IngredientId,
+				InBoundId:        stock.InBoundId,
+				OrderId:          &order.ID,
+				StockNum:         0 - ingredientStock.StockNum,
+				StockUnit:        stock.StockUnit,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("订单【%s】附加材料", order.OrderNumber),
+			})
+
+			stock.StockNum -= ingredientStock.StockNum
+			err = db.Select("stock_num").Updates(&stock).Error
+			if err != nil {
+				return err
+			}
+
+			ingredientStock.StockNum = 0
+		} else {
+			_, err = SaveConsume(db, &models.IngredientConsume{
+				BaseModel: models.BaseModel{
+					Operator: order.Operator,
+				},
+				IngredientId:     stock.IngredientId,
+				InBoundId:        stock.InBoundId,
+				OrderId:          &order.ID,
+				StockNum:         0 - ingredientStock.StockNum,
+				StockUnit:        stock.StockUnit,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("订单【%s】附加材料", order.OrderNumber),
+			})
+
+			ingredientStock.StockNum -= stock.StockNum
+
+			// 删除库存
+			err = db.Delete(&stock).Error
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
 // DeductStockByInBound 根据inbound删除库存 (修改和删除配料入库时使用)
 func DeductStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 	if inBound.IngredientId == nil && *inBound.IngredientId == 0 {

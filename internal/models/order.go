@@ -17,7 +17,7 @@ type Order struct {
 	Images         string          `gorm:"type:text" json:"images"`               // 图片列表
 	UserList       []User          `gorm:"many2many:order_user;" json:"userList"` // 销售人员
 	Ingredient     []AddIngredient `gorm:"foreignKey:OrderID;references:ID" json:"ingredient"`
-	Finish         []Finished      `gorm:"many2many:order_finished;" json:"finish"` // 订单成品
+	UseFinished    []UseFinished   `gorm:"foreignKey:OrderID;references:ID" json:"useFinished"` // 订单成品
 
 	// 请求参数
 	ImageList          []string            `gorm:"-" json:"imageList"`
@@ -32,4 +32,11 @@ type AddIngredient struct {
 	Ingredient   *Ingredients `gorm:"foreignKey:IngredientId" json:"ingredient"`
 	StockUnit    int          `gorm:"type:int(2)" json:"stockUnit"`
 	Quantity     float64      `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
+}
+
+type UseFinished struct {
+	OrderID    int       `gorm:"primaryKey;index" json:"orderID"`
+	FinishedId *int      `gorm:"type:int(11)" json:"finishedId"`
+	Finish     *Finished `gorm:"foreignKey:IngredientId" json:"finish"`
+	Quantity   float64   `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
 }
