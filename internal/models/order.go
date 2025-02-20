@@ -35,8 +35,7 @@ type AddIngredient struct {
 }
 
 type UseFinished struct {
-	OrderID    int       `gorm:"primaryKey;index" json:"orderID"`
-	FinishedId *int      `gorm:"type:int(11)" json:"finishedId"`
-	Finish     *Finished `gorm:"foreignKey:IngredientId" json:"finish"`
-	Quantity   float64   `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
+	OrderID    int     `gorm:"primaryKey;index" json:"orderID"`
+	FinishedId *int    `gorm:"type:int(11)" json:"finishedId"`
+	Quantity   float64 `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
 }
