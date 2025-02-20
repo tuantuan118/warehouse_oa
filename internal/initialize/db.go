@@ -75,7 +75,6 @@ func migration() {
 		&models.AddIngredient{},
 		&models.IngredientConsume{},
 		&models.ProductContent{},
-		&models.OrderProduct{},
 		&models.FinishedProduction{},
 		&models.FinishedConsume{},
 	)
