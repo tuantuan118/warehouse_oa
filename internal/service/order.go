@@ -152,10 +152,11 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 		return nil, err
 	}
 
-	product, err := GetProductByName(order.ProductName)
+	product, err := GetProductById(order.ProductId)
 	if err != nil {
 		return nil, err
 	}
+	order.ProductName = product.Name
 
 	today := time.Now().Format("20060102")
 	total, err := getTodayOrderCount()
@@ -365,6 +366,12 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 		return nil, err
 	}
 
+	if p, err := GetProductByIndex(order.ProductName, order.Specification); err != nil {
+		order.ProductId = 0
+	} else {
+		order.ProductId = p.ID
+	}
+
 	filePath := "./stencil.xlsx"
 	f, err := excelize.OpenFile(filePath)
 	if err != nil {
@@ -401,7 +408,9 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	if err := f.SetCellValue("Sheet1", "B7", B7); err != nil {
 		return nil, err
 	}
-
+	if err := f.SetCellValue("Sheet1", "B10", order.ProductId); err != nil {
+		return nil, err
+	}
 	if err := f.SetCellValue("Sheet1", "C10", order.ProductName); err != nil {
 		return nil, err
 	}
@@ -570,24 +579,24 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		}
 
 		valueList = append(valueList, map[string]interface{}{
-			"订单编号": v.OrderNumber,
-			"产品名称": v.ProductName,
-			"产品规格": v.Specification,
+			"订单编号":  v.OrderNumber,
+			"产品名称":  v.ProductName,
+			"产品规格":  v.Specification,
 			"单价（元）": v.Price,
-			"数量":     v.Amount,
-			"订单金额": v.TotalPrice,
-			"已结金额": v.FinishPrice,
-			"未结金额": v.UnFinishPrice,
-			"成本":     v.Cost,
-			"利润":     v.Profit,
+			"数量":    v.Amount,
+			"订单金额":  v.TotalPrice,
+			"已结金额":  v.FinishPrice,
+			"未结金额":  v.UnFinishPrice,
+			"成本":    v.Cost,
+			"利润":    v.Profit,
 			"毛利率":   v.GrossMargin,
-			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
-			"客户名称": v.Customer.Name,
-			"订单分配": userStr,
-			"销售人员": v.Salesman,
-			"备注":     v.Remark,
-			"更新人员": v.Operator,
-			"更新时间": v.UpdatedAt.Format("2006-01-02 15:04:05"),
+			"订单状态":  fmt.Sprintf("%s", returnStatus(v.Status)),
+			"客户名称":  v.Customer.Name,
+			"订单分配":  userStr,
+			"销售人员":  v.Salesman,
+			"备注":    v.Remark,
+			"更新人员":  v.Operator,
+			"更新时间":  v.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
 		totalPrice += v.TotalPrice
 		finishPrice += v.FinishPrice
@@ -597,7 +606,7 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		"订单金额": totalPrice,
 		"已结金额": finishPrice,
 		"未结金额": totalPrice - finishPrice,
-		"成本":     totalCost,
+		"成本":   totalCost,
 	})
 
 	return utils.ExportExcel(keyList, valueList)

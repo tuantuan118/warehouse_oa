@@ -73,7 +73,34 @@ func GetConsumeList(ids, stockUnit, begTime, endTime string,
 		"totalCount": total,
 		"cost":       consumeCost,
 	}, err
+}
 
+// GetConsumeChart 返回出入库列表图表
+func GetConsumeChart(ids, stockUnit, begTime, endTime string) ([]map[string]interface{}, error) {
+	db := global.Db.Model(&models.IngredientConsume{})
+	totalDb := global.Db.Model(&models.IngredientConsume{})
+
+	if ids != "" {
+		idList := strings.Split(ids, ";")
+		db = db.Where("ingredient_id in ?", idList)
+		totalDb = totalDb.Where("ingredient_id in ?", idList)
+	}
+	if stockUnit != "" {
+		db = db.Where("stock_unit = ?", stockUnit)
+		totalDb = totalDb.Where("stock_unit = ?", stockUnit)
+	}
+	if begTime != "" && endTime != "" {
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+
+	data := make([]map[string]interface{}, 0)
+	err := db.Select("ingredient_id, stock_unit, stock_num").Find(&data).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return data, err
 }
 
 // SaveConsumeByInBound 通过入库表来保存消耗表

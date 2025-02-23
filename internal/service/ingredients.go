@@ -91,6 +91,14 @@ func DelIngredients(id int, username string) error {
 		return errors.New("配料不存在")
 	}
 
+	total, err := GetCountInBoundByIngredientId(id)
+	if err != nil {
+		return err
+	}
+	if total > 0 {
+		return errors.New("配料已有入库信息，无法删除")
+	}
+
 	data.Operator = username
 	err = global.Db.Updates(&data).Error
 	if err != nil {

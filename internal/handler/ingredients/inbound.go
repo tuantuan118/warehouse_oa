@@ -18,6 +18,7 @@ func InitInBoundRouter(router *gin.RouterGroup) {
 
 	inBoundRouter.GET("list", ib.list)
 	inBoundRouter.GET("outList", ib.outList)
+	inBoundRouter.GET("chart", ib.chart)
 	inBoundRouter.GET("export", ib.export)
 	inBoundRouter.GET("exportOut", ib.exportOut)
 	inBoundRouter.GET("getSupplier", ib.getSupplier)
@@ -176,6 +177,21 @@ func (*InBound) outList(c *gin.Context) {
 	endTime := c.DefaultQuery("endTime", "")
 
 	data, err := service.GetConsumeList(ids, stockUnit, begTime, endTime, pn, pSize)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+func (*InBound) chart(c *gin.Context) {
+	ids := c.DefaultQuery("ids", "")
+	stockUnit := c.DefaultQuery("stockUnit", "")
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+
+	data, err := service.GetConsumeChart(ids, stockUnit, begTime, endTime)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

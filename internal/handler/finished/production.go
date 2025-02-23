@@ -17,6 +17,7 @@ func InitProductionRouter(router *gin.RouterGroup) {
 
 	productionRouter.GET("list", p.list)
 	productionRouter.GET("outList", p.outList)
+	productionRouter.GET("chart", p.chart)
 	productionRouter.POST("add", p.add)
 	//productionRouter.POST("update", p.update)
 	productionRouter.POST("void", p.void)
@@ -131,6 +132,27 @@ func (*Production) outList(c *gin.Context) {
 	data, err := service.GetFinishedConsumeList(production,
 		begTime, endTime,
 		pn, pSize)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+// outList 成品出入库接口
+func (*Production) chart(c *gin.Context) {
+	production := &models.FinishedProduction{
+		BaseModel: models.BaseModel{
+			ID: utils.DefaultQueryInt(c, "id", 0),
+		},
+		FinishedId: utils.DefaultQueryInt(c, "finishedId", 0),
+		Status:     utils.DefaultQueryInt(c, "status", -1),
+	}
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+
+	data, err := service.GetFinishedConsumeChart(production, begTime, endTime)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

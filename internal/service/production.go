@@ -82,6 +82,28 @@ func GetFinishedConsumeList(production *models.FinishedProduction,
 	return Pagination(db, []models.FinishedConsume{}, pn, pSize)
 }
 
+func GetFinishedConsumeChart(production *models.FinishedProduction, begTime, endTime string) (interface{}, error) {
+	db := global.Db.Model(&models.FinishedConsume{})
+
+	if production.ID > 0 {
+		db = db.Where("id = ?", production.ID)
+	}
+	if production.FinishedId > 0 {
+		db = db.Where("finished_id = ?", production.FinishedId)
+	}
+	if production.Status > 0 {
+		db = db.Where("status = ?", production.Status)
+	}
+	if begTime != "" && endTime != "" {
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+
+	data := make([]map[string]interface{}, 0)
+	err := db.Select("finished_id, stock_num").Find(&data).Error
+
+	return data, err
+}
+
 func GetProductionById(id int) (*models.FinishedProduction, error) {
 	db := global.Db.Model(&models.FinishedProduction{})
 

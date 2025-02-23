@@ -132,6 +132,19 @@ func GetInBoundById(id int) (*models.IngredientInBound, error) {
 	return data, err
 }
 
+// GetCountInBoundByIngredientId 根据配料ID查询入库信息
+func GetCountInBoundByIngredientId(ingredientId int) (int64, error) {
+	var total int64
+	db := global.Db.Model(&models.IngredientInBound{})
+
+	err := db.Where("ingredient_id = ?", ingredientId).Count(&total).Error
+	if err != nil {
+		return total, err
+	}
+
+	return total, err
+}
+
 // SaveInBound 保存
 func SaveInBound(inBound *models.IngredientInBound) (*models.IngredientInBound, error) {
 	// 获取配料ID
@@ -329,17 +342,17 @@ func ExportIngredients(name, stockUser, begTime, endTime string) (*excelize.File
 	valueList := make([]map[string]interface{}, 0)
 	for _, v := range data {
 		valueList = append(valueList, map[string]interface{}{
-			"配料名称":     v.Ingredient.Name,
+			"配料名称":    v.Ingredient.Name,
 			"配料供应商":   v.Supplier,
-			"配料规格":     v.Specification,
-			"单价（元）":     v.UnitPrice,
+			"配料规格":    v.Specification,
+			"单价（元）":   v.UnitPrice,
 			"采购金额（元）": v.TotalPrice,
 			"已结金额（元）": v.FinishPrice,
 			"未结金额（元）": v.TotalPrice - v.FinishPrice,
-			"入库数量":     fmt.Sprintf("%0.2%s", v.StockNum, returnUnit(v.StockUnit)),
-			"入库人员":     v.StockUser,
-			"入库时间":     v.StockTime,
-			"备注":         v.Remark,
+			"入库数量":    fmt.Sprintf("%0.2%s", v.StockNum, returnUnit(v.StockUnit)),
+			"入库人员":    v.StockUser,
+			"入库时间":    v.StockTime,
+			"备注":      v.Remark,
 		})
 	}
 	valueList = append(valueList, map[string]interface{}{

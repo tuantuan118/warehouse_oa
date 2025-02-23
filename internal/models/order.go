@@ -26,6 +26,7 @@ type Order struct {
 	GrossMargin        float64             `gorm:"-" json:"grossMargin"`
 	Cost               float64             `gorm:"-" json:"cost"`
 	UnFinishPrice      float64             `gorm:"-" json:"unFinishPrice"` // 已结金额
+	ProductId          int                 `gorm:"-" json:"productId"`
 }
 
 type AddIngredient struct {

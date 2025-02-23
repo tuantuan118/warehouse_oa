@@ -2,8 +2,8 @@ package models
 
 type Product struct {
 	BaseModel
-	Name           string           `gorm:"type:varchar(256)" json:"name"`
-	Specification  string           `gorm:"type:varchar(256)" json:"specification"`
+	Name           string           `gorm:"uniqueIndex:idx_name_specification;type:varchar(256)" json:"name"`
+	Specification  string           `gorm:"uniqueIndex:idx_name_specification;type:varchar(256)" json:"specification"`
 	ProductContent []ProductContent `gorm:"foreignKey:ProductId;references:ID" json:"productContent"`
 }
 

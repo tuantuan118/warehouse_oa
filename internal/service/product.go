@@ -52,7 +52,7 @@ func GetProductByName(name string) (*models.Product, error) {
 
 // SaveProduct 创建产品
 func SaveProduct(product *models.Product) (*models.Product, error) {
-	err := IfProductByName(product.Name)
+	err := IfProductByName(product.Name, product.Specification)
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +162,10 @@ func GetProductFieldList(field string) ([]string, error) {
 }
 
 // IfProductByName 判断用户名是否已存在
-func IfProductByName(name string) error {
+func IfProductByName(name, specification string) error {
 	var count int64
-	err := global.Db.Model(&models.Product{}).Where("name = ?",
-		name).Count(&count).Error
+	err := global.Db.Model(&models.Product{}).Where("name = ? and specification = ?",
+		name, specification).Count(&count).Error
 	if err != nil {
 		return err
 	}
@@ -174,6 +174,15 @@ func IfProductByName(name string) error {
 	}
 
 	return nil
+}
+
+// GetProductByIndex 根据名字和规格查询产品
+func GetProductByIndex(name, specification string) (*models.Product, error) {
+	var product *models.Product
+	err := global.Db.Model(&models.Product{}).Where("name = ? and specification = ?",
+		name, specification).First(&product).Error
+
+	return product, err
 }
 
 // RemoveFinished 删除关联的成品
