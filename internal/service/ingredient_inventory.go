@@ -175,7 +175,7 @@ func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 		err = global.Db.Model(&models.IngredientStock{}).
 			Where("ingredient_id = ?", *ingredientStock.IngredientId).
 			Where("stock_unit = ?", ingredientStock.StockUnit).
-			Where("stock_num > ?", 0).
+			Where("stock_num > ?", ingredientStock.StockNum).
 			Order("add_time asc").First(&stock).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("库存不足")

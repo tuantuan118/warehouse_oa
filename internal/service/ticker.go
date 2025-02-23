@@ -27,10 +27,10 @@ func Ticker() {
 		for _, v := range production {
 			v.Status = 4
 
-			//_, err = UpdateFinished(&v)
-			//if err != nil {
-			//	logrus.Infoln("定时任务修改产品库存错误: ", err.Error())
-			//}
+			err = global.Db.Updates(&v).Error
+			if err != nil {
+				logrus.Infoln("定时任务修改产品库存错误: ", err.Error())
+			}
 		}
 	}
 }

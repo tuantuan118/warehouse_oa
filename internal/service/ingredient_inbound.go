@@ -249,6 +249,12 @@ func DelInBound(id int, username string) error {
 		}
 	}()
 
+	var total int64
+	if global.Db.Model(&models.IngredientConsume{}).
+		Where("in_bound_id = ? and operation_type = ?", data.ID, false).Count(&total); total != 0 {
+		return errors.New("配料已使用，无法删除")
+	}
+
 	err = tx.Where("in_bound_id = ?", data.ID).Delete(&models.IngredientConsume{}).Error
 	if err != nil {
 		return err
@@ -268,7 +274,7 @@ func DelInBound(id int, username string) error {
 }
 
 // ExportIngredients 配料入库页面导出
-func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*excelize.File, error) {
+func ExportIngredients(name, stockUser, begTime, endTime string) (*excelize.File, error) {
 	db := global.Db.Model(&models.IngredientInBound{})
 	totalDb := global.Db.Model(&models.IngredientInBound{})
 
@@ -279,10 +285,6 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 		}
 		db = db.Where("ingredient_id in ?", idList)
 		totalDb = totalDb.Where("ingredient_id in ?", idList)
-	}
-	if supplier != "" {
-		db = db.Where("supplier = ?", supplier)
-		totalDb = totalDb.Where("supplier = ?", supplier)
 	}
 	if stockUser != "" {
 		db = db.Where("stock_user = ?", stockUser)
@@ -302,10 +304,6 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 	if err = totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
 		return nil, err
 	}
-	var consumeCost float64
-	if err = totalDb.Select("SUM(cost)").Scan(&consumeCost).Error; err != nil {
-		return nil, err
-	}
 	unFinishPrice := totalPrice - finishPrice
 
 	data := make([]models.IngredientInBound, 0)
@@ -319,9 +317,9 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 		"配料供应商",
 		"配料规格",
 		"单价（元）",
-		"金额（元）",
-		"已结金额",
-		"未结金额",
+		"采购金额（元）",
+		"已结金额（元）",
+		"未结金额（元）",
 		"入库数量",
 		"入库人员",
 		"入库时间",
@@ -331,24 +329,23 @@ func ExportIngredients(name, supplier, stockUser, begTime, endTime string) (*exc
 	valueList := make([]map[string]interface{}, 0)
 	for _, v := range data {
 		valueList = append(valueList, map[string]interface{}{
-			"配料名称":  v.Ingredient.Name,
-			"配料供应商": v.Supplier,
-			"配料规格":  v.Specification,
-			"单价（元）": v.UnitPrice,
-			"金额（元）": v.TotalPrice,
-			"已结金额":  v.FinishPrice,
-			"未结金额":  v.TotalPrice - v.FinishPrice,
-			"入库数量":  fmt.Sprintf("%f%s", v.StockNum, returnUnit(v.StockUnit)),
-			"入库人员":  v.StockUser,
-			"入库时间":  v.StockTime,
-			"备注":    v.Remark,
+			"配料名称":     v.Ingredient.Name,
+			"配料供应商":   v.Supplier,
+			"配料规格":     v.Specification,
+			"单价（元）":     v.UnitPrice,
+			"采购金额（元）": v.TotalPrice,
+			"已结金额（元）": v.FinishPrice,
+			"未结金额（元）": v.TotalPrice - v.FinishPrice,
+			"入库数量":     fmt.Sprintf("%0.2%s", v.StockNum, returnUnit(v.StockUnit)),
+			"入库人员":     v.StockUser,
+			"入库时间":     v.StockTime,
+			"备注":         v.Remark,
 		})
 	}
 	valueList = append(valueList, map[string]interface{}{
-		"金额（元）": totalPrice,
-		"已结金额":  finishPrice,
-		"未结金额":  unFinishPrice,
-		"成本":    consumeCost,
+		"采购金额（元）": totalPrice,
+		"已结金额（元）": finishPrice,
+		"未结金额（元）": unFinishPrice,
 	})
 
 	return utils.ExportExcel(keyList, valueList)

@@ -71,28 +71,36 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 	data := make([]models.Order, 0)
 	err = db.Find(&data).Error
 
+	logrus.Infoln("len(data)", len(data))
+
 	for n := range data {
 		data[n].ImageList = make([]string, 0)
 		if data[n].Images != "" {
 			data[n].ImageList = strings.Split(data[n].Images, ";")
 		}
 
-		if data[n].PaymentHistory == "" {
-			continue
-		}
-		data[n].PaymentHistoryList = make([]map[string]string, 0)
-		fpl := strings.Split(data[n].PaymentHistory, ";")
-		for _, f := range fpl {
-			fp := strings.Split(f, "&")
-			if len(fp) != 2 {
-				continue
+		if data[n].PaymentHistory != "" {
+			data[n].PaymentHistoryList = make([]map[string]string, 0)
+			fpl := strings.Split(data[n].PaymentHistory, ";")
+			for _, f := range fpl {
+				fp := strings.Split(f, "&")
+				if len(fp) != 2 {
+					continue
+				}
+				data[n].PaymentHistoryList = append(data[n].PaymentHistoryList, map[string]string{
+					"time":  fp[0],
+					"price": fp[1],
+				})
 			}
-			data[n].PaymentHistoryList = append(data[n].PaymentHistoryList, map[string]string{
-				"time":  fp[0],
-				"price": fp[1],
-			})
 		}
-		//data[n].Profit = data[n].TotalPrice - data[n].Cost
+
+		cost, err := GetCostByOrder(&data[n])
+		if err != nil {
+			return nil, err
+		}
+		data[n].UnFinishPrice = data[n].TotalPrice - data[n].FinishPrice
+		data[n].Cost = cost
+		data[n].Profit = data[n].TotalPrice - data[n].Cost
 		data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
 	}
 
@@ -164,12 +172,15 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 	order.UseFinished = make([]models.UseFinished, 0)
 	for _, p := range product.ProductContent {
 		order.UseFinished = append(order.UseFinished, models.UseFinished{
-			FinishedId: &p.FinishedId,
+			FinishedId: p.FinishedId,
 			Quantity:   p.Quantity,
 		})
 	}
 
-	err = global.Db.Model(&models.Order{}).Create(order).Error
+	err = global.Db.Model(&models.Order{}).Create(&order).Error
+	if err != nil {
+		return nil, err
+	}
 
 	return order, err
 }
@@ -222,7 +233,7 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 	order.UseFinished = make([]models.UseFinished, 0)
 	for _, p := range product.ProductContent {
 		order.UseFinished = append(order.UseFinished, models.UseFinished{
-			FinishedId: &p.FinishedId,
+			FinishedId: p.FinishedId,
 			Quantity:   p.Quantity,
 		})
 	}
@@ -264,7 +275,7 @@ func OutOfStock(id int, username string) error {
 	// 消耗成品
 	for _, u := range order.UseFinished {
 		err = DeductFinishedStock(tx, order, &models.FinishedStock{
-			FinishedId: *u.FinishedId,
+			FinishedId: u.FinishedId,
 			Amount:     u.Quantity * float64(order.Amount),
 		})
 		if err != nil {
@@ -285,7 +296,9 @@ func OutOfStock(id int, username string) error {
 		}
 	}
 
-	return nil
+	err = tx.Select("status", "operator").Updates(&order).Error
+
+	return err
 }
 
 // VoidOrder 作废
@@ -347,14 +360,8 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	if order.ID != 0 {
 		db = db.Where("id = ?", order.ID)
 	}
-
-	data := &models.Order{}
-	db = db.Preload("UserList")
-	db = db.Preload("Customer")
-	db = db.Preload("Ingredient")
-	err := db.First(&data).Error
+	order, err := GetOrderById(order.ID)
 	if err != nil {
-		logrus.Infoln("导出订单错误: ", err.Error())
 		return nil, err
 	}
 
@@ -370,65 +377,66 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 		}
 	}(f)
 
-	B5 := fmt.Sprintf("订单号：%s", data.OrderNumber)
+	B5 := fmt.Sprintf("订单号：%s", order.OrderNumber)
 	if err := f.SetCellValue("Sheet1", "B5", B5); err != nil {
 		return nil, err
 	}
-	F5 := fmt.Sprintf("开单日期：%s", data.CreatedAt.Format("2006/01/02"))
+	F5 := fmt.Sprintf("开单日期：%s", order.CreatedAt.Format("2006/01/02"))
 	if err := f.SetCellValue("Sheet1", "F5", F5); err != nil {
 		return nil, err
 	}
-	B6 := fmt.Sprintf("客户编号：%d", data.Customer.ID)
+	B6 := fmt.Sprintf("客户编号：%d", order.Customer.ID)
 	if err := f.SetCellValue("Sheet1", "B6", B6); err != nil {
 		return nil, err
 	}
-	D6 := fmt.Sprintf("客户名称：%s", data.Customer.Name)
+	D6 := fmt.Sprintf("客户名称：%s", order.Customer.Name)
 	if err := f.SetCellValue("Sheet1", "D6", D6); err != nil {
 		return nil, err
 	}
-	F6 := fmt.Sprintf("客户联系方式：%s", data.Customer.Phone)
+	F6 := fmt.Sprintf("客户联系方式：%s", order.Customer.Phone)
 	if err := f.SetCellValue("Sheet1", "F6", F6); err != nil {
 		return nil, err
 	}
-	B7 := fmt.Sprintf("收货地址：%s", data.Customer.Address)
+	B7 := fmt.Sprintf("收货地址：%s", order.Customer.Address)
 	if err := f.SetCellValue("Sheet1", "B7", B7); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "C10", data.ProductName); err != nil {
+
+	if err := f.SetCellValue("Sheet1", "C10", order.ProductName); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "D10", data.Specification); err != nil {
+	if err := f.SetCellValue("Sheet1", "D10", order.Specification); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "E10", data.Amount); err != nil {
+	if err := f.SetCellValue("Sheet1", "E10", order.Amount); err != nil {
 		return nil, err
 	}
-	F10 := fmt.Sprintf("¥%0.2f", data.Price)
+	F10 := fmt.Sprintf("¥%0.2f", order.Price)
 	if err := f.SetCellValue("Sheet1", "F10", F10); err != nil {
 		return nil, err
 	}
-	G10 := fmt.Sprintf("¥%0.2f", data.TotalPrice)
+	G10 := fmt.Sprintf("¥%0.2f", order.TotalPrice)
 	if err := f.SetCellValue("Sheet1", "G10", G10); err != nil {
 		return nil, err
 	}
-	totalPrice := utils.AmountConvert(data.TotalPrice, true)
+	totalPrice := utils.AmountConvert(order.TotalPrice, true)
 	B12 := fmt.Sprintf("合计(大写): %s", totalPrice)
 	if err := f.SetCellValue("Sheet1", "B12", B12); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "E12", data.Amount); err != nil {
+	if err := f.SetCellValue("Sheet1", "E12", order.Amount); err != nil {
 		return nil, err
 	}
-	G12 := fmt.Sprintf("¥%0.2f", data.TotalPrice)
+	G12 := fmt.Sprintf("¥%0.2f", order.TotalPrice)
 	if err := f.SetCellValue("Sheet1", "G12", G12); err != nil {
 		return nil, err
 	}
-	F14 := fmt.Sprintf("制单人：%s", data.Salesman)
+	F14 := fmt.Sprintf("制单人：%s", order.Salesman)
 	if err := f.SetCellValue("Sheet1", "F14", F14); err != nil {
 		return nil, err
 	}
 
-	newName := fmt.Sprintf("./cos/execl/%d.xlsx", data.ID)
+	newName := fmt.Sprintf("./cos/execl/%d.xlsx", order.ID)
 	if err := f.SaveAs(newName); err != nil {
 		return nil, err
 	} else {
@@ -448,7 +456,7 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 		return nil, err
 	}
 
-	pdfName := fmt.Sprintf("./cos/pdf/%d.pdf", data.ID)
+	pdfName := fmt.Sprintf("./cos/pdf/%d.pdf", order.ID)
 	pdfData, err := os.ReadFile(pdfName)
 	if err != nil {
 		return nil, err
@@ -513,108 +521,19 @@ func GetOrderByCustomer(customerId int) error {
 func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string, pn, pSize int, userId int) (
 	*excelize.File, error) {
 
-	db := global.Db.Model(&models.Order{})
-	totalDb := global.Db.Model(&models.Order{})
-
-	if order.OrderNumber != "" {
-		slice := strings.Split(order.OrderNumber, ";")
-		db = db.Where("order_number in ?", slice)
-		totalDb = totalDb.Where("order_number in ?", slice)
-	}
-	if order.ProductName != "" {
-		slice := strings.Split(order.ProductName, ";")
-		db = db.Where("product_name in ?", slice)
-		totalDb = totalDb.Where("product_name in ?", slice)
-	}
-	if order.Specification != "" {
-		db = db.Where("specification = ?", order.Specification)
-		totalDb = totalDb.Where("specification = ?", order.Specification)
-	}
-	if order.Salesman != "" {
-		slice := strings.Split(order.Salesman, ";")
-		db = db.Where("salesman in ?", slice)
-		totalDb = totalDb.Where("salesman in ?", slice)
-	}
-	if customerStr != "" {
-		slice := strings.Split(customerStr, ";")
-		db = db.Where("customer_id in ?", slice)
-		totalDb = totalDb.Where("customer_id in ?", slice)
-	}
-	if order.Status != 0 {
-		db = db.Where("status = ?", order.Status)
-		totalDb = totalDb.Where("status = ?", order.Status)
-	}
-	if begTime != "" && endTime != "" {
-		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
-		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
-	}
-	db = db.Preload("UserList")
-	db = db.Preload("Customer")
-	db = db.Preload("Ingredient")
-
-	b, err := getAdmin(userId)
+	i, err := GetOrderList(order, customerStr, begTime, endTime, pn, pSize, userId)
 	if err != nil {
 		return nil, err
 	}
+
+	m, b := i.(map[string]interface{})
 	if !b {
-		db = db.Where(" id in (select order_id from tb_order_user where user_id = ?)", userId)
-		totalDb = totalDb.Where(" id in (select order_id from tb_order_user where user_id = ?)", userId)
+		return nil, errors.New("导出错误")
 	}
 
-	var totalPrice float64
-	err = totalDb.Select("COALESCE(SUM(total_price), 0)").Scan(&totalPrice).Error
-	if err != nil {
-		return nil, err
-	}
-	var unFinishPrice float64
-	if err = totalDb.Select("COALESCE(SUM(un_finish_price), 0)").Scan(&unFinishPrice).Error; err != nil {
-		return nil, err
-	}
-	var finishPrice float64
-	if err = totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
-		return nil, err
-	}
-	var consumeCost float64
-	if err = totalDb.Select("SUM(cost)").Scan(&consumeCost).Error; err != nil {
-		return nil, err
-	}
-
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
-		return nil, err
-	}
-
-	if pn != 0 && pSize != 0 {
-		offset := (pn - 1) * pSize
-		db = db.Order("id desc").Limit(pSize).Offset(offset)
-	}
-
-	data := make([]models.Order, 0)
-	err = db.Find(&data).Error
-
-	for n := range data {
-		data[n].ImageList = make([]string, 0)
-		if data[n].Images != "" {
-			data[n].ImageList = strings.Split(data[n].Images, ";")
-		}
-
-		if data[n].PaymentHistory == "" {
-			continue
-		}
-		data[n].PaymentHistoryList = make([]map[string]string, 0)
-		fpl := strings.Split(data[n].PaymentHistory, ";")
-		for _, f := range fpl {
-			fp := strings.Split(f, "&")
-			if len(fp) != 2 {
-				continue
-			}
-			data[n].PaymentHistoryList = append(data[n].PaymentHistoryList, map[string]string{
-				"time":  fp[0],
-				"price": fp[1],
-			})
-		}
-		//data[n].Profit = data[n].TotalPrice - data[n].Cost
-		data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
+	orderList, b := m["data"].([]models.Order)
+	if !b {
+		return nil, errors.New("导出错误")
 	}
 
 	keyList := []string{
@@ -638,33 +557,47 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		"更新时间",
 	}
 
+	var (
+		totalPrice  float64
+		finishPrice float64
+		totalCost   float64
+	)
 	valueList := make([]map[string]interface{}, 0)
-	for _, v := range data {
+	for _, v := range orderList {
+		var userStr string
+		for _, u := range v.UserList {
+			userStr += u.Nickname + ";"
+		}
+
 		valueList = append(valueList, map[string]interface{}{
-			"订单编号":  v.OrderNumber,
-			"产品名称":  v.ProductName,
-			"产品规格":  v.Specification,
+			"订单编号": v.OrderNumber,
+			"产品名称": v.ProductName,
+			"产品规格": v.Specification,
 			"单价（元）": v.Price,
-			"数量":    v.Amount,
-			"订单金额":  v.TotalPrice,
-			"已结金额":  v.FinishPrice,
-			"未结金额":  v.TotalPrice - v.FinishPrice,
-			//"成本":    v.Cost,
-			"利润":   v.Profit,
-			"毛利率":  v.GrossMargin,
+			"数量":     v.Amount,
+			"订单金额": v.TotalPrice,
+			"已结金额": v.FinishPrice,
+			"未结金额": v.UnFinishPrice,
+			"成本":     v.Cost,
+			"利润":     v.Profit,
+			"毛利率":   v.GrossMargin,
 			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
 			"客户名称": v.Customer.Name,
+			"订单分配": userStr,
 			"销售人员": v.Salesman,
-			"备注":   v.Remark,
+			"备注":     v.Remark,
 			"更新人员": v.Operator,
-			"更新时间": v.UpdatedAt,
+			"更新时间": v.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
+		totalPrice += v.TotalPrice
+		finishPrice += v.FinishPrice
+		totalCost += v.Cost
 	}
 	valueList = append(valueList, map[string]interface{}{
 		"订单金额": totalPrice,
 		"已结金额": finishPrice,
-		"未结金额": unFinishPrice,
-		"成本":   consumeCost,
+		"未结金额": totalPrice - finishPrice,
+		"成本":     totalCost,
 	})
 
 	return utils.ExportExcel(keyList, valueList)

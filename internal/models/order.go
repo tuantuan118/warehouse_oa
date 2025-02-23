@@ -16,18 +16,20 @@ type Order struct {
 	Salesman       string          `gorm:"type:varchar(256)" json:"salesman"`     // 订单分配
 	Images         string          `gorm:"type:text" json:"images"`               // 图片列表
 	UserList       []User          `gorm:"many2many:order_user;" json:"userList"` // 销售人员
-	Ingredient     []AddIngredient `gorm:"foreignKey:OrderID;references:ID" json:"ingredient"`
-	UseFinished    []UseFinished   `gorm:"foreignKey:OrderID;references:ID" json:"useFinished"` // 订单成品
+	Ingredient     []AddIngredient `gorm:"foreignKey:OrderId;references:ID" json:"ingredient"`
+	UseFinished    []UseFinished   `gorm:"foreignKey:OrderId;references:ID" json:"useFinished"` // 订单成品
 
 	// 请求参数
 	ImageList          []string            `gorm:"-" json:"imageList"`
 	PaymentHistoryList []map[string]string `gorm:"-" json:"paymentHistoryList"`
 	Profit             float64             `gorm:"-" json:"profit"`
 	GrossMargin        float64             `gorm:"-" json:"grossMargin"`
+	Cost               float64             `gorm:"-" json:"cost"`
+	UnFinishPrice      float64             `gorm:"-" json:"unFinishPrice"` // 已结金额
 }
 
 type AddIngredient struct {
-	OrderID      int          `gorm:"primaryKey;index" json:"orderID"`
+	OrderId      int          `gorm:"index" json:"orderId"`
 	IngredientId *int         `gorm:"type:int(11)" json:"ingredientId"`
 	Ingredient   *Ingredients `gorm:"foreignKey:IngredientId" json:"ingredient"`
 	StockUnit    int          `gorm:"type:int(2)" json:"stockUnit"`
@@ -35,7 +37,7 @@ type AddIngredient struct {
 }
 
 type UseFinished struct {
-	OrderID    int     `gorm:"primaryKey;index" json:"orderID"`
-	FinishedId *int    `gorm:"type:int(11)" json:"finishedId"`
+	OrderId    int     `gorm:"index" json:"orderId"`
+	FinishedId int     `gorm:"type:int(11)" json:"finishedId"`
 	Quantity   float64 `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
 }

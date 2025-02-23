@@ -27,7 +27,36 @@ func GetProductionList(production *models.FinishedProduction,
 		db = db.Where("DATE_FORMAT(finish_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
-	return Pagination(db, []models.FinishedProduction{}, pn, pSize)
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	if pn != 0 && pSize != 0 {
+		offset := (pn - 1) * pSize
+		db = db.Order("id desc").Limit(pSize).Offset(offset)
+	}
+
+	var data []models.FinishedProduction
+	err := db.Find(&data).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range data {
+		cost, err := GetCostByProduction(item.ID, 0)
+		if err != nil {
+			return nil, err
+		}
+		item.Cost = cost
+	}
+
+	return map[string]interface{}{
+		"data":       data,
+		"pageNo":     pn,
+		"pageSize":   pSize,
+		"totalCount": total,
+	}, err
 }
 
 func GetFinishedConsumeList(production *models.FinishedProduction,
@@ -100,12 +129,16 @@ func SaveProduction(production *models.FinishedProduction) (*models.FinishedProd
 	}
 
 	// 扣除配料库存
+
 	for _, material := range finished.Material {
+		logrus.Info("material.Quantity", material.Quantity)
+		logrus.Info("production.ExpectAmount", production.ExpectAmount)
+
 		err = DeductStock(tx, production,
 			&models.IngredientStock{
 				IngredientId: &material.IngredientId,
-				StockNum:     material.Quantity * float64(production.ExpectAmount),
 				StockUnit:    material.StockUnit,
+				StockNum:     material.Quantity * float64(production.ExpectAmount),
 			})
 		if err != nil {
 			return nil, err

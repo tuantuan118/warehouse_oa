@@ -185,11 +185,10 @@ func (*Order) fields(c *gin.Context) {
 func (*Order) exportExecl(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	order := &models.Order{
-		ProductName:   c.DefaultQuery("productName", ""),
-		OrderNumber:   c.DefaultQuery("orderNumber", ""),
-		Specification: c.DefaultQuery("specification", ""),
-		Salesman:      c.DefaultQuery("salesman", ""),
-		Status:        utils.DefaultQueryInt(c, "status", 0),
+		ProductName: c.DefaultQuery("productName", ""),
+		OrderNumber: c.DefaultQuery("orderNumber", ""),
+		Salesman:    c.DefaultQuery("salesman", ""),
+		Status:      utils.DefaultQueryInt(c, "status", 0),
 	}
 	customerStr := c.DefaultQuery("customerId", "")
 	begTime := c.DefaultQuery("begTime", "")

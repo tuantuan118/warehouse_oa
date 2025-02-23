@@ -23,13 +23,13 @@ type FinishedProduction struct {
 	Ratio              float64    `gorm:"type:decimal(10,2);not null" json:"ratio"`
 	ExpectAmount       int        `gorm:"type:int(11);not null" json:"expectAmount"`
 	ActualAmount       int        `gorm:"type:int(11);not null" json:"actualAmount"`
-	UnitPrice          float64    `gorm:"type:decimal(12,2)" json:"unitPrice"`
 	Status             int        `gorm:"type:int(11);not null" json:"status"`
 	EstimatedTime      *time.Time `gorm:"type:Time" json:"estimatedTime"`
 	FinishTime         *time.Time `gorm:"type:Time" json:"finishTime"`
 	ProductIngredients string     `gorm:"type:Text;not null" json:"productIngredients"`
 
-	FinishHour int `gorm:"-" json:"finishHour"`
+	FinishHour int     `gorm:"-" json:"finishHour"`
+	Cost       float64 `gorm:"-" json:"cost"`
 }
 
 type FinishedStock struct {

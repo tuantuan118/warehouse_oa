@@ -65,10 +65,10 @@ func DelCustomer(id int) error {
 		return errors.New("user does not exist")
 	}
 
-	//err = GetOrderByCustomer(id)
-	//if err != nil {
-	//	return errors.New("existing orders")
-	//}
+	err = GetOrderByCustomer(id)
+	if err != nil {
+		return errors.New("客户已产生订单")
+	}
 
 	return global.Db.Delete(&data).Error
 }

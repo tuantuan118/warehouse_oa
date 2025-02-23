@@ -2,10 +2,15 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"github.com/sirupsen/logrus"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
+	"strconv"
 	"strings"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
+	"warehouse_oa/utils"
 )
 
 // GetConsumeList 返回出入库列表查询数据
@@ -29,7 +34,7 @@ func GetConsumeList(ids, stockUnit, begTime, endTime string,
 		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
-	cost, err := GetConsumeAllCost()
+	consumeCost, err := GetConsumeAllCost()
 	db = db.Preload("Ingredient")
 
 	var total int64
@@ -48,12 +53,25 @@ func GetConsumeList(ids, stockUnit, begTime, endTime string,
 		return nil, err
 	}
 
+	for n := range data {
+		if data[n].StockNum > 0 {
+			data[n].Cost = 0
+			continue
+		}
+		cost, err := GetCostByConsume(data[n])
+		if err != nil {
+			return nil, err
+		}
+		logrus.Info("consume cost:", cost)
+		data[n].Cost = cost
+	}
+
 	return map[string]interface{}{
 		"data":       data,
 		"pageNo":     pn,
 		"pageSize":   pSize,
 		"totalCount": total,
-		"cost":       cost,
+		"cost":       consumeCost,
 	}, err
 
 }
@@ -135,8 +153,84 @@ func GetConsumeAllCost() (string, error) {
 		FROM
 		tb_ingredient_consume
 		JOIN
-		tb_ingredient_in_bound ON tb_ingredient_in_bound.id = tb_ingredient_consume.ingredient_id 
+		tb_ingredient_in_bound ON tb_ingredient_in_bound.id = tb_ingredient_consume.in_bound_id 
 		WHERE operation_type = FALSE;`).First(&cost).Error
 
 	return cost, err
+}
+
+// ExportConsume 配料出入库页面导出
+func ExportConsume(ids, stockUnit, begTime, endTime string) (*excelize.File, error) {
+	db := global.Db.Model(&models.IngredientConsume{})
+	totalDb := global.Db.Model(&models.IngredientConsume{})
+
+	if ids != "" {
+		idList := strings.Split(ids, ";")
+		db = db.Where("ingredient_id in ?", idList)
+		totalDb = totalDb.Where("ingredient_id in ?", idList)
+	}
+	if stockUnit != "" {
+		db = db.Where("stock_unit = ?", stockUnit)
+		totalDb = totalDb.Where("stock_unit = ?", stockUnit)
+	}
+	if begTime != "" && endTime != "" {
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+
+	costStr, err := GetConsumeAllCost()
+	db = db.Preload("Ingredient")
+
+	data := make([]models.IngredientConsume, 0)
+	db = db.Preload("Ingredient")
+	err = db.Preload("InBound").Order("id desc").Find(&data).Error
+	if err != nil {
+		return nil, err
+	}
+
+	valueList := make([]map[string]interface{}, 0)
+	for _, v := range data {
+		var operationType string
+		if v.StockNum <= 0 {
+			consumeCost, err := GetCostByConsume(v)
+			if err != nil {
+				return nil, err
+			}
+			v.Cost = consumeCost
+			operationType = "出库"
+		} else {
+			operationType = "入库"
+		}
+
+		valueList = append(valueList, map[string]interface{}{
+			"配料名称":    v.Ingredient.Name,
+			"操作类型":    operationType,
+			"操作数量":    fmt.Sprintf("%0.2f(%s)", v.StockNum, returnUnit(v.InBound.StockUnit)),
+			"操作明细":    v.OperationDetails,
+			"成本金额（元）": v.Cost,
+			"操作时间":    v.CreatedAt.Format("2006-01-02 15:04:05"),
+			"操作人员":    v.Operator,
+		})
+	}
+
+	keyList := []string{
+		"配料名称",
+		"操作类型",
+		"操作数量",
+		"操作明细",
+		"成本金额（元）",
+		"操作时间",
+		"操作人员",
+	}
+
+	// string 转 float64
+	cost, err := strconv.ParseFloat(costStr, 64)
+	if err != nil {
+		return nil, err
+	}
+	valueList = append(valueList, map[string]interface{}{
+		"成本金额（元）": fmt.Sprintf("%.2f", cost),
+	})
+
+	return utils.ExportExcel(keyList, valueList)
 }

@@ -19,6 +19,7 @@ func InitInBoundRouter(router *gin.RouterGroup) {
 	inBoundRouter.GET("list", ib.list)
 	inBoundRouter.GET("outList", ib.outList)
 	inBoundRouter.GET("export", ib.export)
+	inBoundRouter.GET("exportOut", ib.exportOut)
 	inBoundRouter.GET("getSupplier", ib.getSupplier)
 	inBoundRouter.POST("add", ib.add)
 	inBoundRouter.POST("update", ib.update)
@@ -123,12 +124,34 @@ func (*InBound) finishInBound(c *gin.Context) {
 
 func (*InBound) export(c *gin.Context) {
 	name := c.DefaultQuery("name", "")
-	supplier := c.DefaultQuery("supplier", "")
 	stockUser := c.DefaultQuery("stockUser", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.ExportIngredients(name, supplier, stockUser, begTime, endTime)
+	data, err := service.ExportIngredients(name, stockUser, begTime, endTime)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", `attachment; filename="配料入库.xlsx"`)
+	c.Header("Content-Transfer-Encoding", "binary")
+
+	// 将 Excel 文件写入到 HTTP 响应中
+	if err = data.Write(c.Writer); err != nil {
+		c.String(http.StatusInternalServerError, "文件生成失败")
+		return
+	}
+}
+
+func (*InBound) exportOut(c *gin.Context) {
+	ids := c.DefaultQuery("ids", "")
+	stockUnit := c.DefaultQuery("stockUnit", "")
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+
+	data, err := service.ExportConsume(ids, stockUnit, begTime, endTime)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

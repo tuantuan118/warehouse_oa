@@ -51,6 +51,9 @@ type IngredientConsume struct {
 	StockUnit        int                 `gorm:"type:int(2)" json:"stockUnit"`
 	OperationType    bool                `gorm:"type:bool" json:"operationType"` // true表示启用，false表示禁用
 	OperationDetails string              `gorm:"type:varchar(256)" json:"operationDetails"`
+
+	// 返回参数
+	Cost float64 `gorm:"-" json:"cost"`
 }
 
 // 返回数据

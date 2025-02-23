@@ -73,6 +73,7 @@ func migration() {
 		&models.Gallery{},
 		&models.Product{},
 		&models.AddIngredient{},
+		&models.UseFinished{},
 		&models.IngredientConsume{},
 		&models.ProductContent{},
 		&models.FinishedProduction{},
