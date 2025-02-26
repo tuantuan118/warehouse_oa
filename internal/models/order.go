@@ -2,6 +2,7 @@ package models
 
 type Order struct {
 	BaseModel
+	ProductId      int             `gorm:"type:int(11)" json:"productId"`
 	ProductName    string          `gorm:"type:varchar(256);not null" json:"productName"`
 	OrderNumber    string          `gorm:"type:varchar(256);not null" json:"orderNumber"`
 	Specification  string          `gorm:"type:varchar(256)" json:"specification"`
@@ -26,7 +27,6 @@ type Order struct {
 	GrossMargin        float64             `gorm:"-" json:"grossMargin"`
 	Cost               float64             `gorm:"-" json:"cost"`
 	UnFinishPrice      float64             `gorm:"-" json:"unFinishPrice"` // 已结金额
-	ProductId          int                 `gorm:"-" json:"productId"`
 }
 
 type AddIngredient struct {

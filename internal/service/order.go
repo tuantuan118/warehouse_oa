@@ -220,35 +220,18 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 		return nil, err
 	}
 
-	product, err := GetProductByName(order.ProductName)
-	if err != nil {
-		return nil, err
-	}
-
 	order.Images = strings.Join(order.ImageList, ";")
 	order.OrderNumber = oldData.OrderNumber
 	order.TotalPrice = order.Price * float64(order.Amount)
 	order.FinishPrice = oldData.FinishPrice
 	order.Status = oldData.Status
 
-	order.UseFinished = make([]models.UseFinished, 0)
-	for _, p := range product.ProductContent {
-		order.UseFinished = append(order.UseFinished, models.UseFinished{
-			FinishedId: p.FinishedId,
-			Quantity:   p.Quantity,
-		})
-	}
-
 	// 清除 UserList 关联
 	if err := global.Db.Model(&oldData).Association("UserList").Clear(); err != nil {
 		return nil, err
 	}
-	// 清除 UserList 关联
+	// 清除 Ingredient 关联
 	if err := global.Db.Model(&oldData).Association("Ingredient").Clear(); err != nil {
-		return nil, err
-	}
-	// 清除 UserList 关联
-	if err := global.Db.Model(&oldData).Association("UseFinished").Clear(); err != nil {
 		return nil, err
 	}
 
@@ -364,12 +347,6 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	order, err := GetOrderById(order.ID)
 	if err != nil {
 		return nil, err
-	}
-
-	if p, err := GetProductByIndex(order.ProductName, order.Specification); err != nil {
-		order.ProductId = 0
-	} else {
-		order.ProductId = p.ID
 	}
 
 	filePath := "./stencil.xlsx"

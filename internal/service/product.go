@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"strings"
 	"warehouse_oa/internal/global"
@@ -52,9 +53,12 @@ func GetProductByName(name string) (*models.Product, error) {
 
 // SaveProduct 创建产品
 func SaveProduct(product *models.Product) (*models.Product, error) {
-	err := IfProductByName(product.Name, product.Specification)
+	total, err := IfProductByName(product.Name, product.Specification)
 	if err != nil {
 		return nil, err
+	}
+	if total > 0 {
+		return nil, errors.New("产品名和规格已存在")
 	}
 
 	if product.ProductContent == nil || len(product.ProductContent) == 0 {
@@ -76,13 +80,7 @@ func SaveProduct(product *models.Product) (*models.Product, error) {
 
 // UpdateProduct 修改产品
 func UpdateProduct(product *models.Product) (*models.Product, error) {
-	if product.ID == 0 {
-		return nil, errors.New("id is 0")
-	}
-	_, err := GetProductById(product.ID)
-	if err != nil {
-		return nil, err
-	}
+	var err error
 
 	if product.ProductContent == nil || len(product.ProductContent) == 0 {
 		return nil, errors.New("产品列表不能为空")
@@ -112,7 +110,12 @@ func UpdateProduct(product *models.Product) (*models.Product, error) {
 		return nil, err
 	}
 
-	return product, tx.Updates(&product).Error
+	err = tx.Updates(&product).Error
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		return nil, errors.New("产品名和规格已存在")
+	}
+	return product, err
 }
 
 func DelProduct(id int) error {
@@ -162,18 +165,15 @@ func GetProductFieldList(field string) ([]string, error) {
 }
 
 // IfProductByName 判断用户名是否已存在
-func IfProductByName(name, specification string) error {
-	var count int64
+func IfProductByName(name, specification string) (int64, error) {
+	var total int64
 	err := global.Db.Model(&models.Product{}).Where("name = ? and specification = ?",
-		name, specification).Count(&count).Error
+		name, specification).Count(&total).Error
 	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return errors.New("产品名已存在")
+		return total, err
 	}
 
-	return nil
+	return total, nil
 }
 
 // GetProductByIndex 根据名字和规格查询产品

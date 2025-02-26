@@ -59,7 +59,7 @@ func GetInBoundList(name, stockUnit, begTime, endTime string,
 
 	if pn != 0 && pSize != 0 {
 		offset := (pn - 1) * pSize
-		db = db.Order("id desc").Limit(pSize).Offset(offset)
+		db = db.Order("stock_time desc").Limit(pSize).Offset(offset)
 	}
 
 	data := make([]models.IngredientInBound, 0)
@@ -401,7 +401,7 @@ func GetSupplier() ([]string, error) {
 	db := global.Db.Model(&models.IngredientInBound{})
 	db = db.Distinct("supplier").Where("supplier != ''")
 
-	if err := db.Scan(&supplierList).Error; err != nil {
+	if err := db.Find(&supplierList).Error; err != nil {
 		return nil, err
 	}
 
