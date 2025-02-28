@@ -24,16 +24,8 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 		slice := strings.Split(order.OrderNumber, ";")
 		db = db.Where("order_number in ?", slice)
 	}
-	if order.ProductName != "" {
-		slice := strings.Split(order.ProductName, ";")
-		db = db.Where("product_name in ?", slice)
-	}
 	if order.Specification != "" {
 		db = db.Where("specification = ?", order.Specification)
-	}
-	if order.Salesman != "" {
-		slice := strings.Split(order.Salesman, ";")
-		db = db.Where("salesman in ?", slice)
 	}
 	if customerStr != "" {
 		slice := strings.Split(customerStr, ";")
@@ -73,36 +65,36 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 
 	logrus.Infoln("len(data)", len(data))
 
-	for n := range data {
-		data[n].ImageList = make([]string, 0)
-		if data[n].Images != "" {
-			data[n].ImageList = strings.Split(data[n].Images, ";")
-		}
-
-		if data[n].PaymentHistory != "" {
-			data[n].PaymentHistoryList = make([]map[string]string, 0)
-			fpl := strings.Split(data[n].PaymentHistory, ";")
-			for _, f := range fpl {
-				fp := strings.Split(f, "&")
-				if len(fp) != 2 {
-					continue
-				}
-				data[n].PaymentHistoryList = append(data[n].PaymentHistoryList, map[string]string{
-					"time":  fp[0],
-					"price": fp[1],
-				})
-			}
-		}
-
-		cost, err := GetCostByOrder(&data[n])
-		if err != nil {
-			return nil, err
-		}
-		data[n].UnFinishPrice = data[n].TotalPrice - data[n].FinishPrice
-		data[n].Cost = cost
-		data[n].Profit = data[n].TotalPrice - data[n].Cost
-		data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
-	}
+	//for n := range data {
+	//	data[n].ImageList = make([]string, 0)
+	//	if data[n].Images != "" {
+	//		data[n].ImageList = strings.Split(data[n].Images, ";")
+	//	}
+	//
+	//	if data[n].PaymentHistory != "" {
+	//		data[n].PaymentHistoryList = make([]map[string]string, 0)
+	//		fpl := strings.Split(data[n].PaymentHistory, ";")
+	//		for _, f := range fpl {
+	//			fp := strings.Split(f, "&")
+	//			if len(fp) != 2 {
+	//				continue
+	//			}
+	//			data[n].PaymentHistoryList = append(data[n].PaymentHistoryList, map[string]string{
+	//				"time":  fp[0],
+	//				"price": fp[1],
+	//			})
+	//		}
+	//	}
+	//
+	//	cost, err := GetCostByOrder(&data[n])
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	data[n].UnFinishPrice = data[n].TotalPrice - data[n].FinishPrice
+	//	data[n].Cost = cost
+	//	data[n].Profit = data[n].TotalPrice - data[n].Cost
+	//	data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
+	//}
 
 	return map[string]interface{}{
 		"data":       data,
@@ -116,10 +108,10 @@ func GetOrderById(id int) (*models.Order, error) {
 	db := global.Db.Model(&models.Order{})
 
 	data := &models.Order{}
-	db = db.Preload("UserList")
+	db = db.Preload("OrderProduct.UserList")
+	db = db.Preload("OrderProduct.Ingredient")
+	db = db.Preload("OrderProduct.UseFinished")
 	db = db.Preload("Customer")
-	db = db.Preload("Ingredient.Ingredient")
-	db = db.Preload("UseFinished")
 	err := db.Where("id = ?", id).First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("user does not exist")
@@ -131,32 +123,45 @@ func GetOrderById(id int) (*models.Order, error) {
 func SaveOrder(order *models.Order) (*models.Order, error) {
 	var err error
 
-	if order.UserList != nil || len(order.UserList) > 0 {
-		for _, v := range order.UserList {
-			_, err = GetUserById(v.ID)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	for _, ingredient := range order.Ingredient {
-		_, err = GetIngredientsById(*ingredient.IngredientId)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	_, err = GetCustomerById(order.CustomerId)
 	if err != nil {
 		return nil, err
 	}
 
-	product, err := GetProductById(order.ProductId)
-	if err != nil {
-		return nil, err
+	var totalPrice float64
+	for _, orderProduct := range order.OrderProduct {
+		if orderProduct.UserList != nil || len(orderProduct.UserList) > 0 {
+			for _, v := range orderProduct.UserList {
+				_, err = GetUserById(v.ID)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		for _, ingredient := range orderProduct.Ingredient {
+			_, err = GetIngredientsById(*ingredient.IngredientId)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		product, err := GetProductById(orderProduct.ProductId)
+		if err != nil {
+			return nil, err
+		}
+		orderProduct.ProductName = product.Name
+
+		orderProduct.Images = strings.Join(orderProduct.ImageList, ";")
+		orderProduct.UseFinished = make([]models.UseFinished, 0)
+		for _, p := range product.ProductContent {
+			orderProduct.UseFinished = append(orderProduct.UseFinished, models.UseFinished{
+				FinishedId: p.FinishedId,
+				Quantity:   p.Quantity,
+			})
+		}
+		totalPrice += orderProduct.Price * float64(orderProduct.Amount)
 	}
-	order.ProductName = product.Name
 
 	today := time.Now().Format("20060102")
 	total, err := getTodayOrderCount()
@@ -164,19 +169,10 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 		return nil, err
 	}
 
-	order.Images = strings.Join(order.ImageList, ";")
 	order.OrderNumber = fmt.Sprintf("QY%s%d", today, total+10001)
-	order.TotalPrice = order.Price * float64(order.Amount)
+	order.TotalPrice = totalPrice
 	order.FinishPrice = 0
 	order.Status = 1
-
-	order.UseFinished = make([]models.UseFinished, 0)
-	for _, p := range product.ProductContent {
-		order.UseFinished = append(order.UseFinished, models.UseFinished{
-			FinishedId: p.FinishedId,
-			Quantity:   p.Quantity,
-		})
-	}
 
 	err = global.Db.Model(&models.Order{}).Create(&order).Error
 	if err != nil {
@@ -199,20 +195,33 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 		return nil, errors.New("订单已出库，无法修改")
 	}
 
-	if order.UserList != nil || len(order.UserList) > 0 {
-		for _, v := range order.UserList {
-			_, err = GetUserById(v.ID)
+	var totalPrice float64
+	for _, orderProduct := range order.OrderProduct {
+		if orderProduct.UserList != nil || len(orderProduct.UserList) > 0 {
+			for _, v := range orderProduct.UserList {
+				_, err = GetUserById(v.ID)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		for _, ingredient := range orderProduct.Ingredient {
+			_, err = GetIngredientsById(*ingredient.IngredientId)
 			if err != nil {
 				return nil, err
 			}
 		}
-	}
 
-	for _, ingredient := range order.Ingredient {
-		_, err = GetIngredientsById(*ingredient.IngredientId)
+		product, err := GetProductById(orderProduct.ProductId)
 		if err != nil {
 			return nil, err
 		}
+		orderProduct.ProductName = product.Name
+
+		orderProduct.Images = strings.Join(orderProduct.ImageList, ";")
+
+		totalPrice += orderProduct.Price * float64(orderProduct.Amount)
 	}
 
 	_, err = GetCustomerById(order.CustomerId)
@@ -220,18 +229,13 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 		return nil, err
 	}
 
-	order.Images = strings.Join(order.ImageList, ";")
 	order.OrderNumber = oldData.OrderNumber
-	order.TotalPrice = order.Price * float64(order.Amount)
+	order.TotalPrice = totalPrice
 	order.FinishPrice = oldData.FinishPrice
 	order.Status = oldData.Status
 
 	// 清除 UserList 关联
-	if err := global.Db.Model(&oldData).Association("UserList").Clear(); err != nil {
-		return nil, err
-	}
-	// 清除 Ingredient 关联
-	if err := global.Db.Model(&oldData).Association("Ingredient").Clear(); err != nil {
+	if err := global.Db.Model(&oldData).Association("OrderProduct").Clear(); err != nil {
 		return nil, err
 	}
 
@@ -257,26 +261,27 @@ func OutOfStock(id int, username string) error {
 	order.Operator = username
 
 	// 消耗成品
-	for _, u := range order.UseFinished {
-		err = DeductFinishedStock(tx, order, &models.FinishedStock{
-			FinishedId: u.FinishedId,
-			Amount:     u.Quantity * float64(order.Amount),
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// 消耗附加材料
-	for _, ingredient := range order.Ingredient {
-		err = DeductOrderAttach(tx, order,
-			&models.IngredientStock{
-				IngredientId: ingredient.IngredientId,
-				StockNum:     ingredient.Quantity * float64(order.Amount),
-				StockUnit:    ingredient.StockUnit,
+	for _, od := range order.OrderProduct {
+		for _, u := range od.UseFinished {
+			err = DeductFinishedStock(tx, order, &models.FinishedStock{
+				FinishedId: u.FinishedId,
+				Amount:     u.Quantity * float64(od.Amount),
 			})
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
+		}
+		// 消耗附加材料
+		for _, ingredient := range od.Ingredient {
+			err = DeductOrderAttach(tx, order,
+				&models.IngredientStock{
+					IngredientId: ingredient.IngredientId,
+					StockNum:     ingredient.Quantity * float64(od.Amount),
+					StockUnit:    ingredient.StockUnit,
+				})
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -556,24 +561,24 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		}
 
 		valueList = append(valueList, map[string]interface{}{
-			"订单编号":  v.OrderNumber,
-			"产品名称":  v.ProductName,
-			"产品规格":  v.Specification,
+			"订单编号": v.OrderNumber,
+			"产品名称": v.ProductName,
+			"产品规格": v.Specification,
 			"单价（元）": v.Price,
-			"数量":    v.Amount,
-			"订单金额":  v.TotalPrice,
-			"已结金额":  v.FinishPrice,
-			"未结金额":  v.UnFinishPrice,
-			"成本":    v.Cost,
-			"利润":    v.Profit,
+			"数量":     v.Amount,
+			"订单金额": v.TotalPrice,
+			"已结金额": v.FinishPrice,
+			"未结金额": v.UnFinishPrice,
+			"成本":     v.Cost,
+			"利润":     v.Profit,
 			"毛利率":   v.GrossMargin,
-			"订单状态":  fmt.Sprintf("%s", returnStatus(v.Status)),
-			"客户名称":  v.Customer.Name,
-			"订单分配":  userStr,
-			"销售人员":  v.Salesman,
-			"备注":    v.Remark,
-			"更新人员":  v.Operator,
-			"更新时间":  v.UpdatedAt.Format("2006-01-02 15:04:05"),
+			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
+			"客户名称": v.Customer.Name,
+			"订单分配": userStr,
+			"销售人员": v.Salesman,
+			"备注":     v.Remark,
+			"更新人员": v.Operator,
+			"更新时间": v.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
 		totalPrice += v.TotalPrice
 		finishPrice += v.FinishPrice
@@ -583,7 +588,7 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		"订单金额": totalPrice,
 		"已结金额": finishPrice,
 		"未结金额": totalPrice - finishPrice,
-		"成本":   totalCost,
+		"成本":     totalCost,
 	})
 
 	return utils.ExportExcel(keyList, valueList)

@@ -251,9 +251,14 @@ func ExportConsume(ids, stockUnit, begTime, endTime string) (*excelize.File, err
 	}
 
 	// string 转 float64
-	cost, err := strconv.ParseFloat(costStr, 64)
-	if err != nil {
-		return nil, err
+	var cost float64
+	if len(costStr) == 0 {
+		cost = 0
+	} else {
+		cost, err = strconv.ParseFloat(costStr, 64)
+		if err != nil {
+			return nil, err
+		}
 	}
 	valueList = append(valueList, map[string]interface{}{
 		"成本金额（元）": fmt.Sprintf("%.2f", cost),
