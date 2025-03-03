@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"net/http"
 	"warehouse_oa/internal/handler"
 	"warehouse_oa/internal/models"
 	"warehouse_oa/internal/service"
@@ -85,6 +86,8 @@ func (*Gallery) fields(c *gin.Context) {
 }
 
 func (*Gallery) uploads(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
+	
 	form, err := c.MultipartForm()
 	if err != nil {
 		handler.InternalServerError(c, err)

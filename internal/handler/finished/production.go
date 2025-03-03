@@ -126,12 +126,13 @@ func (*Production) outList(c *gin.Context) {
 		FinishedId: utils.DefaultQueryInt(c, "finishedId", 0),
 		Status:     utils.DefaultQueryInt(c, "status", -1),
 	}
+	inOrOut := utils.DefaultQueryInt(c, "inOrOut", 0)
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
 	data, err := service.GetFinishedConsumeList(production,
 		begTime, endTime,
-		pn, pSize)
+		inOrOut, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

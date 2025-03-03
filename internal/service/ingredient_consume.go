@@ -15,7 +15,7 @@ import (
 
 // GetConsumeList 返回出入库列表查询数据
 func GetConsumeList(ids, stockUnit, begTime, endTime string,
-	pn, pSize int) (interface{}, error) {
+	inOrOut, pn, pSize int) (interface{}, error) {
 
 	db := global.Db.Model(&models.IngredientConsume{})
 	totalDb := global.Db.Model(&models.IngredientConsume{})
@@ -32,6 +32,14 @@ func GetConsumeList(ids, stockUnit, begTime, endTime string,
 	if begTime != "" && endTime != "" {
 		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+	if inOrOut == 1 {
+		db = db.Where("stock_num > 0")
+		totalDb = totalDb.Where("stock_num > 0")
+	}
+	if inOrOut == 2 {
+		db = db.Where("stock_num < 0")
+		totalDb = totalDb.Where("stock_num < 0")
 	}
 
 	consumeCost, err := GetConsumeAllCost()
@@ -234,7 +242,7 @@ func ExportConsume(ids, stockUnit, begTime, endTime string) (*excelize.File, err
 			"操作类型":    operationType,
 			"操作数量":    fmt.Sprintf("%0.2f(%s)", v.StockNum, returnUnit(v.InBound.StockUnit)),
 			"操作明细":    v.OperationDetails,
-			"成本金额（元）": v.Cost,
+			"成本金额（元）": fmt.Sprintf("%0.2f", v.Cost),
 			"操作时间":    v.CreatedAt.Format("2006-01-02 15:04:05"),
 			"操作人员":    v.Operator,
 		})
@@ -264,5 +272,5 @@ func ExportConsume(ids, stockUnit, begTime, endTime string) (*excelize.File, err
 		"成本金额（元）": fmt.Sprintf("%.2f", cost),
 	})
 
-	return utils.ExportExcel(keyList, valueList)
+	return utils.ExportExcel(keyList, valueList, []string{"E"})
 }

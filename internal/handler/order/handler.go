@@ -17,6 +17,7 @@ func InitOrderRouter(router *gin.RouterGroup) {
 	orderRouter := router.Group("order")
 
 	orderRouter.GET("list", o.list)
+	orderRouter.GET("listById", o.listById)
 	orderRouter.GET("fields", o.fields)
 	orderRouter.GET("export", o.export)
 	orderRouter.GET("exportExecl", o.exportExecl)
@@ -30,11 +31,9 @@ func InitOrderRouter(router *gin.RouterGroup) {
 func (*Order) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	order := &models.Order{
-		ProductName:   c.DefaultQuery("productName", ""),
-		OrderNumber:   c.DefaultQuery("orderNumber", ""),
-		Specification: c.DefaultQuery("specification", ""),
-		Salesman:      c.DefaultQuery("salesman", ""),
-		Status:        utils.DefaultQueryInt(c, "status", 0),
+		OrderNumber: c.DefaultQuery("orderNumber", ""),
+		Salesman:    c.DefaultQuery("salesman", ""),
+		Status:      utils.DefaultQueryInt(c, "status", 0),
 	}
 	customerStr := c.DefaultQuery("customerId", "")
 	begTime := c.DefaultQuery("begTime", "")
@@ -42,6 +41,18 @@ func (*Order) list(c *gin.Context) {
 	userId := c.GetInt("userId")
 
 	data, err := service.GetOrderList(order, customerStr, begTime, endTime, pn, pSize, userId)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+func (*Order) listById(c *gin.Context) {
+	id := utils.DefaultQueryInt(c, "id", 0)
+
+	data, err := service.GetListById(id)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -151,10 +162,8 @@ func (*Order) export(c *gin.Context) {
 		BaseModel: models.BaseModel{
 			ID: utils.DefaultQueryInt(c, "id", 0),
 		},
-		ProductName:   c.DefaultQuery("productName", ""),
-		OrderNumber:   c.DefaultQuery("orderNumber", ""),
-		Specification: c.DefaultQuery("specification", ""),
-		CustomerId:    utils.DefaultQueryInt(c, "customerId", 0),
+		OrderNumber: c.DefaultQuery("orderNumber", ""),
+		CustomerId:  utils.DefaultQueryInt(c, "customerId", 0),
 	}
 
 	data, err := service.ExportOrder(order)
@@ -185,7 +194,6 @@ func (*Order) fields(c *gin.Context) {
 func (*Order) exportExecl(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	order := &models.Order{
-		ProductName: c.DefaultQuery("productName", ""),
 		OrderNumber: c.DefaultQuery("orderNumber", ""),
 		Salesman:    c.DefaultQuery("salesman", ""),
 		Status:      utils.DefaultQueryInt(c, "status", 0),

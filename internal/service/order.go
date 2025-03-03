@@ -6,6 +6,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
+	_ "image/png"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,9 +25,6 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 		slice := strings.Split(order.OrderNumber, ";")
 		db = db.Where("order_number in ?", slice)
 	}
-	if order.Specification != "" {
-		db = db.Where("specification = ?", order.Specification)
-	}
 	if customerStr != "" {
 		slice := strings.Split(customerStr, ";")
 		db = db.Where("customer_id in ?", slice)
@@ -37,17 +35,19 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 	if begTime != "" && endTime != "" {
 		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
-	db = db.Preload("UserList")
 	db = db.Preload("Customer")
-	db = db.Preload("Ingredient.Ingredient")
-	db = db.Preload("UseFinished")
+	db = db.Preload("OrderProduct.UserList")
+	db = db.Preload("OrderProduct.Ingredient")
+	db = db.Preload("OrderProduct.UseFinished")
 
 	b, err := getAdmin(userId)
 	if err != nil {
 		return nil, err
 	}
 	if !b {
-		db = db.Where(" id in (select order_id from tb_order_user where user_id = ?)", userId)
+		db = db.Where("id in ("+
+			"select order_id from tb_order_product where id in ("+
+			"select order_product_id from tb_order_product_user where user_id = ?))", userId)
 	}
 
 	var total int64
@@ -65,43 +65,65 @@ func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn,
 
 	logrus.Infoln("len(data)", len(data))
 
-	//for n := range data {
-	//	data[n].ImageList = make([]string, 0)
-	//	if data[n].Images != "" {
-	//		data[n].ImageList = strings.Split(data[n].Images, ";")
-	//	}
-	//
-	//	if data[n].PaymentHistory != "" {
-	//		data[n].PaymentHistoryList = make([]map[string]string, 0)
-	//		fpl := strings.Split(data[n].PaymentHistory, ";")
-	//		for _, f := range fpl {
-	//			fp := strings.Split(f, "&")
-	//			if len(fp) != 2 {
-	//				continue
-	//			}
-	//			data[n].PaymentHistoryList = append(data[n].PaymentHistoryList, map[string]string{
-	//				"time":  fp[0],
-	//				"price": fp[1],
-	//			})
-	//		}
-	//	}
-	//
-	//	cost, err := GetCostByOrder(&data[n])
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	data[n].UnFinishPrice = data[n].TotalPrice - data[n].FinishPrice
-	//	data[n].Cost = cost
-	//	data[n].Profit = data[n].TotalPrice - data[n].Cost
-	//	data[n].GrossMargin = data[n].Profit / data[n].TotalPrice
-	//}
-
 	return map[string]interface{}{
 		"data":       data,
 		"pageNo":     pn,
 		"pageSize":   pSize,
 		"totalCount": total,
 	}, err
+}
+
+func GetListById(id int) (interface{}, error) {
+	if id == 0 {
+		return nil, errors.New("ID不能为0")
+	}
+
+	db := global.Db.Model(&models.Order{})
+
+	data := &models.Order{}
+	db = db.Preload("Customer")
+	db = db.Preload("OrderProduct.UserList")
+	db = db.Preload("OrderProduct.Ingredient")
+	db = db.Preload("OrderProduct.UseFinished")
+
+	err := db.Where("id = ?", id).First(&data).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("订单不存在")
+	}
+
+	if data.PaymentHistory != "" {
+		data.PaymentHistoryList = make([]map[string]string, 0)
+		fpl := strings.Split(data.PaymentHistory, ";")
+		for _, f := range fpl {
+			fp := strings.Split(f, "&")
+			if len(fp) != 2 {
+				continue
+			}
+			data.PaymentHistoryList = append(data.PaymentHistoryList, map[string]string{
+				"time":  fp[0],
+				"price": fp[1],
+			})
+		}
+	}
+
+	for _, op := range data.OrderProduct {
+		op.ImageList = make([]string, 0)
+		if op.Images != "" {
+			op.ImageList = strings.Split(op.Images, ";")
+		}
+	}
+
+	cost, err := GetCostByOrder(data)
+	if err != nil {
+		return nil, err
+	}
+
+	data.Cost = cost
+	data.Profit = data.TotalPrice - data.Cost
+	data.GrossMargin = data.Profit / data.TotalPrice
+	data.UnFinishPrice = data.TotalPrice - data.FinishPrice
+
+	return data, err
 }
 
 func GetOrderById(id int) (*models.Order, error) {
@@ -151,6 +173,7 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 			return nil, err
 		}
 		orderProduct.ProductName = product.Name
+		orderProduct.Specification = product.Specification
 
 		orderProduct.Images = strings.Join(orderProduct.ImageList, ";")
 		orderProduct.UseFinished = make([]models.UseFinished, 0)
@@ -195,49 +218,16 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 		return nil, errors.New("订单已出库，无法修改")
 	}
 
-	var totalPrice float64
-	for _, orderProduct := range order.OrderProduct {
-		if orderProduct.UserList != nil || len(orderProduct.UserList) > 0 {
-			for _, v := range orderProduct.UserList {
-				_, err = GetUserById(v.ID)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		for _, ingredient := range orderProduct.Ingredient {
-			_, err = GetIngredientsById(*ingredient.IngredientId)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		product, err := GetProductById(orderProduct.ProductId)
-		if err != nil {
-			return nil, err
-		}
-		orderProduct.ProductName = product.Name
-
-		orderProduct.Images = strings.Join(orderProduct.ImageList, ";")
-
-		totalPrice += orderProduct.Price * float64(orderProduct.Amount)
-	}
-
 	_, err = GetCustomerById(order.CustomerId)
 	if err != nil {
 		return nil, err
 	}
 
+	order.OrderProduct = nil
 	order.OrderNumber = oldData.OrderNumber
-	order.TotalPrice = totalPrice
+	order.TotalPrice = oldData.TotalPrice
 	order.FinishPrice = oldData.FinishPrice
 	order.Status = oldData.Status
-
-	// 清除 UserList 关联
-	if err := global.Db.Model(&oldData).Association("OrderProduct").Clear(); err != nil {
-		return nil, err
-	}
 
 	return order, global.Db.Updates(&order).Error
 }
@@ -326,7 +316,7 @@ func CheckoutOrder(id int, totalPrice float64, paymentTime, operator string) (*m
 
 	data.FinishPrice += totalPrice
 
-	str := fmt.Sprintf("%s&%f;", paymentTime, totalPrice)
+	str := fmt.Sprintf("%s&%0.2f;", paymentTime, totalPrice)
 	data.PaymentHistory += str
 
 	if data.TotalPrice-data.FinishPrice > 0 {
@@ -390,40 +380,85 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	if err := f.SetCellValue("Sheet1", "B7", B7); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "B10", order.ProductId); err != nil {
+
+	var i, sumAmount int
+	var sumTotalPrice float64
+	for _, p := range order.OrderProduct {
+		var productId int
+		product, err := GetProductByIndex(p.ProductName, p.Specification)
+		if err != nil {
+			return nil, err
+		}
+		if product != nil {
+			productId = product.ID
+		}
+
+		num := 10 + i
+		err = f.DuplicateRow("Sheet1", num)
+		if err != nil {
+			return nil, err
+		}
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", num), productId); err != nil {
+			return nil, err
+		}
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("C%d", num), p.ProductName); err != nil {
+			return nil, err
+		}
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("D%d", num), p.Specification); err != nil {
+			return nil, err
+		}
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("E%d", num), p.Amount); err != nil {
+			return nil, err
+		}
+		F10 := fmt.Sprintf("¥%0.2f", p.Price)
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("F%d", num), F10); err != nil {
+			return nil, err
+		}
+		totalPrice := fmt.Sprintf("¥%0.2f", p.Price*float64(p.Amount))
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("G%d", num), totalPrice); err != nil {
+			return nil, err
+		}
+
+		sumAmount += p.Amount
+		sumTotalPrice += p.Price * float64(p.Amount)
+		i = i + 1
+	}
+
+	sumTotalPriceStr := utils.AmountConvert(sumTotalPrice, true)
+	B12 := fmt.Sprintf("合计(大写): %s", sumTotalPriceStr)
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", 12+i), B12); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "C10", order.ProductName); err != nil {
+
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("D%d", 12+i), "总数量："); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "D10", order.Specification); err != nil {
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("E%d", 12+i), sumAmount); err != nil {
 		return nil, err
 	}
-	if err := f.SetCellValue("Sheet1", "E10", order.Amount); err != nil {
+
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("F%d", 12+i), "总额小写："); err != nil {
 		return nil, err
 	}
-	F10 := fmt.Sprintf("¥%0.2f", order.Price)
-	if err := f.SetCellValue("Sheet1", "F10", F10); err != nil {
+	G12 := fmt.Sprintf("¥%0.2f", sumTotalPrice)
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("G%d", 12+i), G12); err != nil {
 		return nil, err
 	}
-	G10 := fmt.Sprintf("¥%0.2f", order.TotalPrice)
-	if err := f.SetCellValue("Sheet1", "G10", G10); err != nil {
+
+	B14 := fmt.Sprintf("收货欠款人签名：")
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", 14+i), B14); err != nil {
 		return nil, err
 	}
-	totalPrice := utils.AmountConvert(order.TotalPrice, true)
-	B12 := fmt.Sprintf("合计(大写): %s", totalPrice)
-	if err := f.SetCellValue("Sheet1", "B12", B12); err != nil {
-		return nil, err
-	}
-	if err := f.SetCellValue("Sheet1", "E12", order.Amount); err != nil {
-		return nil, err
-	}
-	G12 := fmt.Sprintf("¥%0.2f", order.TotalPrice)
-	if err := f.SetCellValue("Sheet1", "G12", G12); err != nil {
+	D14 := fmt.Sprintf("运输：")
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("D%d", 14+i), D14); err != nil {
 		return nil, err
 	}
 	F14 := fmt.Sprintf("制单人：%s", order.Salesman)
-	if err := f.SetCellValue("Sheet1", "F14", F14); err != nil {
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("F%d", 14+i), F14); err != nil {
+		return nil, err
+	}
+	B16 := fmt.Sprintf("备注:以上货品的数量请当即核对，规格、数量、质量、验收如有不符请当天内通逾期恕不负责，不便之处，敬请原谅。")
+	if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", 16+i), B16); err != nil {
 		return nil, err
 	}
 
@@ -528,70 +563,99 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 	}
 
 	keyList := []string{
-		"订单编号",
-		"产品名称",
-		"产品规格",
-		"单价（元）",
-		"数量",
-		"订单金额",
-		"已结金额",
-		"未结金额",
-		"成本",
-		"利润",
-		"毛利率",
-		"订单状态",
-		"客户名称",
-		"订单分配",
-		"销售人员",
-		"备注",
-		"更新人员",
-		"更新时间",
+		"订单编号",     //"订单编号"
+		"客户名称",     //"客户名称"
+		"产品名称",     //"产品名称"
+		"产品规格",     //"产品规格"
+		"单价（元）",     //"单价（元）"
+		"数量",         //"数量"
+		"订单分配",     //"订单分配"
+		"销售金额（元）", //"销售金额（元）"
+		"成本（元）",     //"成本（元）"
+		"利润（元）",     //"利润（元）"
+		"毛利率",       //"毛利率"
+		"订单总额（元）", //"订单总额（元）"
+		"已结金额（元）", //"已结金额（元）"
+		"未结金额（元）", //"未结金额（元）"
+		"销售日期",     //"销售日期"
+		"订单状态",     //"订单状态"
+		"销售人员",     //"销售人员"
+		"备注",         //"备注"
+		"更新人员",     //"更新人员"
+		"更新时间",     //"更新时间"
 	}
 
 	var (
 		totalPrice  float64
 		finishPrice float64
 		totalCost   float64
+		sumCost     float64
 	)
 	valueList := make([]map[string]interface{}, 0)
+
 	for _, v := range orderList {
-		var userStr string
-		for _, u := range v.UserList {
-			userStr += u.Nickname + ";"
+		cost, err := GetCostByOrder(&v)
+		if err != nil {
+			return nil, err
 		}
 
-		valueList = append(valueList, map[string]interface{}{
-			"订单编号": v.OrderNumber,
-			"产品名称": v.ProductName,
-			"产品规格": v.Specification,
-			"单价（元）": v.Price,
-			"数量":     v.Amount,
-			"订单金额": v.TotalPrice,
-			"已结金额": v.FinishPrice,
-			"未结金额": v.UnFinishPrice,
-			"成本":     v.Cost,
-			"利润":     v.Profit,
-			"毛利率":   v.GrossMargin,
-			"订单状态": fmt.Sprintf("%s", returnStatus(v.Status)),
-			"客户名称": v.Customer.Name,
-			"订单分配": userStr,
-			"销售人员": v.Salesman,
-			"备注":     v.Remark,
-			"更新人员": v.Operator,
-			"更新时间": v.UpdatedAt.Format("2006-01-02 15:04:05"),
-		})
-		totalPrice += v.TotalPrice
-		finishPrice += v.FinishPrice
-		totalCost += v.Cost
+		v.Cost = cost
+		v.Profit = v.TotalPrice - v.Cost
+		v.GrossMargin = v.Profit / v.TotalPrice * 100
+
+		for n, op := range v.OrderProduct {
+			var userListStr string
+			for _, name := range op.UserList {
+				userListStr += name.Nickname + ";"
+			}
+			if n == 0 {
+				valueList = append(valueList, map[string]interface{}{
+					"订单编号":     v.OrderNumber,
+					"客户名称":     v.Customer.Name,
+					"产品名称":     op.ProductName,
+					"产品规格":     op.Specification,
+					"单价（元）":     fmt.Sprintf("%.2f", op.Price),
+					"数量":         op.Amount,
+					"订单分配":     userListStr,
+					"销售金额（元）": fmt.Sprintf("%.2f", op.Price*float64(op.Amount)),
+					"成本（元）":     fmt.Sprintf("%0.2f", v.Cost),        // 成本
+					"利润（元）":     fmt.Sprintf("%0.2f", v.Profit),      // 利润
+					"毛利率":       fmt.Sprintf("%0.2f", v.GrossMargin), // 毛利率
+					"订单总额（元）": fmt.Sprintf("%0.2f", v.TotalPrice),
+					"已结金额（元）": fmt.Sprintf("%0.2f", v.FinishPrice),
+					"未结金额（元）": fmt.Sprintf("%0.2f", v.TotalPrice-v.FinishPrice),
+					"销售日期":     v.SaleDate.Format("2006-01-02 15:04:05"),
+					"订单状态":     returnStatus(v.Status),
+					"销售人员":     v.Salesman,
+					"备注":         v.Remark,
+					"更新人员":     v.Operator,
+					"更新时间":     v.UpdatedAt.Format("2006-01-02 15:04:05"),
+				})
+				sumCost += v.Cost
+				totalPrice += v.TotalPrice
+				finishPrice += v.FinishPrice
+				totalCost += v.Cost
+			} else {
+				valueList = append(valueList, map[string]interface{}{
+					"产品名称":     op.ProductName,
+					"产品规格":     op.Specification,
+					"单价（元）":     fmt.Sprintf("%.2f", op.Price),
+					"数量":         op.Amount,
+					"订单分配":     userListStr,
+					"销售金额（元）": fmt.Sprintf("%.2f", op.Price*float64(op.Amount)),
+				})
+			}
+		}
 	}
 	valueList = append(valueList, map[string]interface{}{
-		"订单金额": totalPrice,
-		"已结金额": finishPrice,
-		"未结金额": totalPrice - finishPrice,
-		"成本":     totalCost,
+		"订单编号":     fmt.Sprintf("总订单数: %d", len(orderList)),
+		"订单总额（元）": fmt.Sprintf("已结合计: %0.2f", totalPrice),
+		"已结金额（元）": fmt.Sprintf("已结合计: %0.2f", finishPrice),
+		"未结金额（元）": fmt.Sprintf("已结合计: %0.2f", totalPrice-finishPrice),
+		"成本（元）":     fmt.Sprintf("已结合计: %0.2f", sumCost),
 	})
 
-	return utils.ExportExcel(keyList, valueList)
+	return utils.ExportExcel(keyList, valueList, []string{"A", "D", "E", "H", "I", "J", "K", "L", "M", "N"})
 }
 
 func returnStatus(i int) string {

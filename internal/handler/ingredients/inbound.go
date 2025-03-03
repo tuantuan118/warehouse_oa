@@ -175,8 +175,9 @@ func (*InBound) outList(c *gin.Context) {
 	stockUnit := c.DefaultQuery("stockUnit", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
+	inOrOut := utils.DefaultQueryInt(c, "inOrOut", 0)
 
-	data, err := service.GetConsumeList(ids, stockUnit, begTime, endTime, pn, pSize)
+	data, err := service.GetConsumeList(ids, stockUnit, begTime, endTime, inOrOut, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

@@ -333,6 +333,8 @@ func ExportIngredients(name, stockUser, begTime, endTime string) (*excelize.File
 		"采购金额（元）",
 		"已结金额（元）",
 		"未结金额（元）",
+		"付款金额",
+		"付款日期",
 		"入库数量",
 		"入库人员",
 		"入库时间",
@@ -341,27 +343,54 @@ func ExportIngredients(name, stockUser, begTime, endTime string) (*excelize.File
 
 	valueList := make([]map[string]interface{}, 0)
 	for _, v := range data {
+
+		m := make([]map[string]string, 0)
+		fpl := strings.Split(v.PaymentHistory, ";")
+		for _, f := range fpl {
+			fp := strings.Split(f, "&")
+			if len(fp) != 2 {
+				continue
+			}
+			m = append(m, map[string]string{
+				"time":  fp[0],
+				"price": fp[1],
+			})
+		}
+
+		var paymentPrice, paymentTime string
+		if len(m) > 0 {
+			paymentPrice = m[0]["price"]
+			paymentTime = m[0]["time"]
+		}
 		valueList = append(valueList, map[string]interface{}{
 			"配料名称":    v.Ingredient.Name,
 			"配料供应商":   v.Supplier,
 			"配料规格":    v.Specification,
 			"单价（元）":   v.UnitPrice,
-			"采购金额（元）": v.TotalPrice,
-			"已结金额（元）": v.FinishPrice,
-			"未结金额（元）": v.TotalPrice - v.FinishPrice,
-			"入库数量":    fmt.Sprintf("%0.2%s", v.StockNum, returnUnit(v.StockUnit)),
+			"采购金额（元）": fmt.Sprintf("%0.2f", v.TotalPrice),
+			"已结金额（元）": fmt.Sprintf("%0.2f", v.FinishPrice),
+			"未结金额（元）": fmt.Sprintf("%0.2f", v.TotalPrice-v.FinishPrice),
+			"付款金额":    paymentPrice,
+			"付款日期":    paymentTime,
+			"入库数量":    fmt.Sprintf("%.2f%s", v.StockNum, returnUnit(v.StockUnit)),
 			"入库人员":    v.StockUser,
 			"入库时间":    v.StockTime,
 			"备注":      v.Remark,
 		})
+		for i := 1; i < len(m); i++ {
+			valueList = append(valueList, map[string]interface{}{
+				"付款金额": m[i]["price"],
+				"付款日期": m[i]["time"],
+			})
+		}
 	}
 	valueList = append(valueList, map[string]interface{}{
-		"采购金额（元）": totalPrice,
-		"已结金额（元）": finishPrice,
-		"未结金额（元）": unFinishPrice,
+		"采购金额（元）": fmt.Sprintf("%0.2f", totalPrice),
+		"已结金额（元）": fmt.Sprintf("%0.2f", finishPrice),
+		"未结金额（元）": fmt.Sprintf("%0.2f", unFinishPrice),
 	})
 
-	return utils.ExportExcel(keyList, valueList)
+	return utils.ExportExcel(keyList, valueList, []string{"D", "E", "F", "G", "H", "I"})
 }
 
 // FinishInBound 结帐
@@ -380,7 +409,7 @@ func FinishInBound(id int, totalPrice float64, paymentTime, operator string) (*m
 
 	data.FinishPrice += totalPrice
 
-	str := fmt.Sprintf("%s&%f;", paymentTime, totalPrice)
+	str := fmt.Sprintf("%s&%0.2f;", paymentTime, totalPrice)
 	data.PaymentHistory += str
 
 	if data.TotalPrice-data.FinishPrice > 0 {

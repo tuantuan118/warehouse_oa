@@ -61,7 +61,7 @@ func GetProductionList(production *models.FinishedProduction,
 
 func GetFinishedConsumeList(production *models.FinishedProduction,
 	begTime, endTime string,
-	pn, pSize int) (interface{}, error) {
+	inOrOut, pn, pSize int) (interface{}, error) {
 
 	db := global.Db.Model(&models.FinishedConsume{})
 	db.Preload("Finished")
@@ -77,6 +77,12 @@ func GetFinishedConsumeList(production *models.FinishedProduction,
 	}
 	if begTime != "" && endTime != "" {
 		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+	if inOrOut == 1 {
+		db = db.Where("stock_num > 0")
+	}
+	if inOrOut == 2 {
+		db = db.Where("stock_num < 0")
 	}
 
 	return Pagination(db, []models.FinishedConsume{}, pn, pSize)

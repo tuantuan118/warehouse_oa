@@ -61,6 +61,7 @@ func migration() {
 		&models.IngredientStock{},
 		&models.Ingredients{},
 		&models.Order{},
+		&models.OrderProduct{},
 		&models.Permission{},
 		&models.Finished{},
 		&models.FinishedStock{},
