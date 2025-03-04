@@ -511,7 +511,9 @@ func GetOrderFieldList(field string, userId int) ([]string, error) {
 		return nil, err
 	}
 	if !b {
-		db = db.Where(" id in (select order_id from tb_order_user where user_id = ?)", userId)
+		db = db.Where("id in ("+
+			"select order_id from tb_order_product where id in ("+
+			"select order_product_id from tb_order_product_user where user_id = ?))", userId)
 	}
 	fields := make([]string, 0)
 	if err := db.Scan(&fields).Error; err != nil {
@@ -544,7 +546,8 @@ func GetOrderByCustomer(customerId int) error {
 	return err
 }
 
-func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string, pn, pSize int, userId int) (
+func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string, pn, pSize int,
+	costStatus, userId int) (
 	*excelize.File, error) {
 
 	i, err := GetOrderList(order, customerStr, begTime, endTime, pn, pSize, userId)
@@ -562,100 +565,298 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		return nil, errors.New("导出错误")
 	}
 
-	keyList := []string{
-		"订单编号",     //"订单编号"
-		"客户名称",     //"客户名称"
-		"产品名称",     //"产品名称"
-		"产品规格",     //"产品规格"
-		"单价（元）",     //"单价（元）"
-		"数量",         //"数量"
-		"订单分配",     //"订单分配"
-		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",     //"成本（元）"
-		"利润（元）",     //"利润（元）"
-		"毛利率",       //"毛利率"
-		"订单总额（元）", //"订单总额（元）"
-		"已结金额（元）", //"已结金额（元）"
-		"未结金额（元）", //"未结金额（元）"
-		"销售日期",     //"销售日期"
-		"订单状态",     //"订单状态"
-		"销售人员",     //"销售人员"
-		"备注",         //"备注"
-		"更新人员",     //"更新人员"
-		"更新时间",     //"更新时间"
-	}
-
 	var (
 		totalPrice  float64
 		finishPrice float64
 		totalCost   float64
 		sumCost     float64
 	)
-	valueList := make([]map[string]interface{}, 0)
+
+	keyList := []string{
+		"订单编号",    //"订单编号"
+		"客户名称",    //"客户名称"
+		"产品名称",    //"产品名称"
+		"产品规格",    //"产品规格"
+		"单价（元）",   //"单价（元）"
+		"数量",      //"数量"
+		"订单分配",    //"订单分配"
+		"销售金额（元）", //"销售金额（元）"
+		"成本（元）",   //"成本（元）"
+		"利润（元）",   //"利润（元）"
+		"毛利率",     //"毛利率"
+		"订单总额（元）", //"订单总额（元）"
+		"已结金额（元）", //"已结金额（元）"
+		"未结金额（元）", //"未结金额（元）"
+		"销售日期",    //"销售日期"
+		"订单状态",    //"订单状态"
+		"销售人员",    //"销售人员"
+		"备注",      //"备注"
+		"更新人员",    //"更新人员"
+		"更新时间",    //"更新时间"
+	}
+
+	var row int = 1 // 行数
+	sheetName := "Sheet1"
+
+	f := excelize.NewFile()
+	_, err = f.NewSheet(sheetName)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, k := range keyList {
+		cell := fmt.Sprintf("%s%d", getExcelColumnName(i), row)
+		err = f.SetCellValue(sheetName, cell, k)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	for _, v := range orderList {
+		rowCopy := row + 1
+		var cell string
+
 		cost, err := GetCostByOrder(&v)
 		if err != nil {
 			return nil, err
 		}
-
 		v.Cost = cost
 		v.Profit = v.TotalPrice - v.Cost
 		v.GrossMargin = v.Profit / v.TotalPrice * 100
 
-		for n, op := range v.OrderProduct {
+		sumCost += v.Cost
+		totalPrice += v.TotalPrice
+		finishPrice += v.FinishPrice
+		totalCost += v.Cost
+		for _, op := range v.OrderProduct {
+			row++
 			var userListStr string
 			for _, name := range op.UserList {
 				userListStr += name.Nickname + ";"
 			}
-			if n == 0 {
-				valueList = append(valueList, map[string]interface{}{
-					"订单编号":     v.OrderNumber,
-					"客户名称":     v.Customer.Name,
-					"产品名称":     op.ProductName,
-					"产品规格":     op.Specification,
-					"单价（元）":     fmt.Sprintf("%.2f", op.Price),
-					"数量":         op.Amount,
-					"订单分配":     userListStr,
-					"销售金额（元）": fmt.Sprintf("%.2f", op.Price*float64(op.Amount)),
-					"成本（元）":     fmt.Sprintf("%0.2f", v.Cost),        // 成本
-					"利润（元）":     fmt.Sprintf("%0.2f", v.Profit),      // 利润
-					"毛利率":       fmt.Sprintf("%0.2f", v.GrossMargin), // 毛利率
-					"订单总额（元）": fmt.Sprintf("%0.2f", v.TotalPrice),
-					"已结金额（元）": fmt.Sprintf("%0.2f", v.FinishPrice),
-					"未结金额（元）": fmt.Sprintf("%0.2f", v.TotalPrice-v.FinishPrice),
-					"销售日期":     v.SaleDate.Format("2006-01-02 15:04:05"),
-					"订单状态":     returnStatus(v.Status),
-					"销售人员":     v.Salesman,
-					"备注":         v.Remark,
-					"更新人员":     v.Operator,
-					"更新时间":     v.UpdatedAt.Format("2006-01-02 15:04:05"),
-				})
-				sumCost += v.Cost
-				totalPrice += v.TotalPrice
-				finishPrice += v.FinishPrice
-				totalCost += v.Cost
-			} else {
-				valueList = append(valueList, map[string]interface{}{
-					"产品名称":     op.ProductName,
-					"产品规格":     op.Specification,
-					"单价（元）":     fmt.Sprintf("%.2f", op.Price),
-					"数量":         op.Amount,
-					"订单分配":     userListStr,
-					"销售金额（元）": fmt.Sprintf("%.2f", op.Price*float64(op.Amount)),
-				})
+			cell = fmt.Sprintf("%s%d", "A", row)
+			err = f.SetCellValue(sheetName, cell, v.OrderNumber)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "B", row)
+			err = f.SetCellValue(sheetName, cell, v.Customer.Name)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "C", row)
+			err = f.SetCellValue(sheetName, cell, op.ProductName)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "D", row)
+			err = f.SetCellValue(sheetName, cell, op.Specification)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "E", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%.2f", op.Price))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "F", row)
+			err = f.SetCellValue(sheetName, cell, op.Amount)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "G", row)
+			err = f.SetCellValue(sheetName, cell, userListStr)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "H", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%.2f", op.Price*float64(op.Amount)))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "I", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.Cost))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "J", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.Profit))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "K", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.GrossMargin))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "L", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.TotalPrice))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "M", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.FinishPrice))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "N", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.TotalPrice-v.FinishPrice))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "O", row)
+			err = f.SetCellValue(sheetName, cell, v.SaleDate.Format("2006-01-02 15:04:05"))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "P", row)
+			err = f.SetCellValue(sheetName, cell, returnStatus(v.Status))
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "Q", row)
+			err = f.SetCellValue(sheetName, cell, v.Salesman)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "R", row)
+			err = f.SetCellValue(sheetName, cell, v.Remark)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "S", row)
+			err = f.SetCellValue(sheetName, cell, v.Operator)
+			if err != nil {
+				return nil, err
+			}
+			cell = fmt.Sprintf("%s%d", "T", row)
+			err = f.SetCellValue(sheetName, cell, v.UpdatedAt.Format("2006-01-02 15:04:05"))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// 合并同一订单
+		columnList := []string{"A", "B", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"}
+		for _, c := range columnList {
+			err = f.MergeCell(sheetName,
+				fmt.Sprintf("%s%d", c, rowCopy),
+				fmt.Sprintf("%s%d", c, row))
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
-	valueList = append(valueList, map[string]interface{}{
-		"订单编号":     fmt.Sprintf("总订单数: %d", len(orderList)),
-		"订单总额（元）": fmt.Sprintf("已结合计: %0.2f", totalPrice),
-		"已结金额（元）": fmt.Sprintf("已结合计: %0.2f", finishPrice),
-		"未结金额（元）": fmt.Sprintf("已结合计: %0.2f", totalPrice-finishPrice),
-		"成本（元）":     fmt.Sprintf("已结合计: %0.2f", sumCost),
-	})
 
-	return utils.ExportExcel(keyList, valueList, []string{"A", "D", "E", "H", "I", "J", "K", "L", "M", "N"})
+	// 修改样式
+	allStyle, err := f.NewStyle(&excelize.Style{
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+	})
+	err = f.SetCellStyle(sheetName,
+		"A1",
+		fmt.Sprintf("T%d", row+1),
+		allStyle)
+	if err != nil {
+		return nil, err
+	}
+
+	redFontList := []string{"A", "L", "M", "N", "O"}
+	redFontStyle, err := f.NewStyle(&excelize.Style{
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+		Font: &excelize.Font{
+			Color: "FF0000",
+		},
+	})
+	for _, r := range redFontList {
+		err = f.SetCellStyle(sheetName,
+			fmt.Sprintf("%s1", r),
+			fmt.Sprintf("%s%d", r, row+1),
+			redFontStyle)
+		if err != nil {
+			return nil, err
+		}
+	}
+	yellowBackList := []string{"I", "J", "K"}
+	yellowBackStyle, err := f.NewStyle(&excelize.Style{
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+		Fill: excelize.Fill{
+			Type:    "pattern",
+			Color:   []string{"#FFFF00"}, // 黄色背景
+			Pattern: 1,                   // 实心填充
+		},
+	})
+	for _, r := range yellowBackList {
+		err = f.SetCellStyle(sheetName,
+			fmt.Sprintf("%s2", r),
+			fmt.Sprintf("%s%d", r, row),
+			yellowBackStyle)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	row++
+	cell := fmt.Sprintf("%s%d", "A", row)
+	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("总订单数: %d", len(orderList)))
+	if err != nil {
+		return nil, err
+	}
+	cell = fmt.Sprintf("%s%d", "M", row)
+	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("已结合计: %0.2f", finishPrice))
+	if err != nil {
+		return nil, err
+	}
+	cell = fmt.Sprintf("%s%d", "N", row)
+	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("未结合计: %0.2f", totalPrice-finishPrice))
+	if err != nil {
+		return nil, err
+	}
+	cell = fmt.Sprintf("%s%d", "I", row)
+	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("成本合计: %0.2f", sumCost))
+	if err != nil {
+		return nil, err
+	}
+	cell = fmt.Sprintf("%s%d", "J", row)
+	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("利润合计: %0.2f", totalPrice-sumCost))
+	if err != nil {
+		return nil, err
+	}
+	cell = fmt.Sprintf("%s%d", "L", row)
+	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("订单总额合计: %0.2f", totalPrice))
+	if err != nil {
+		return nil, err
+	}
+
+	err = f.DuplicateRowTo(sheetName, row, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	if costStatus == 0 {
+		err = f.RemoveCol("Sheet1", "K")
+		if err != nil {
+			return nil, err
+		}
+		err = f.RemoveCol("Sheet1", "J")
+		if err != nil {
+			return nil, err
+		}
+		err = f.RemoveCol("Sheet1", "I")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return f, nil
 }
 
 func returnStatus(i int) string {
@@ -670,4 +871,15 @@ func returnStatus(i int) string {
 		return "作废"
 	}
 	return ""
+}
+
+func getExcelColumnName(n int) string {
+	n += 1
+	result := ""
+	for n > 0 {
+		n-- // Excel 列从 1 开始，这里减一进行调整
+		result = string(rune('A'+(n%26))) + result
+		n /= 26
+	}
+	return result
 }

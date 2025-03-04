@@ -201,9 +201,11 @@ func (*Order) exportExecl(c *gin.Context) {
 	customerStr := c.DefaultQuery("customerId", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
+	costStatus := utils.DefaultQueryInt(c, "costStatus", 0)
+
 	userId := c.GetInt("userId")
 
-	data, err := service.ExportOrderExecl(order, customerStr, begTime, endTime, pn, pSize, userId)
+	data, err := service.ExportOrderExecl(order, customerStr, begTime, endTime, pn, pSize, costStatus, userId)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
