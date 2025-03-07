@@ -269,7 +269,7 @@ func ExportConsume(ids, stockUnit, begTime, endTime string) (*excelize.File, err
 		}
 	}
 	valueList = append(valueList, map[string]interface{}{
-		"成本金额（元）": fmt.Sprintf("%.2f", cost),
+		"成本金额（元）": fmt.Sprintf("成本金额合计（元）: %.2f", cost),
 	})
 
 	return utils.ExportExcel(keyList, valueList, []string{"E"})

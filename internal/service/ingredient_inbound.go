@@ -385,9 +385,9 @@ func ExportIngredients(name, stockUser, begTime, endTime string) (*excelize.File
 		}
 	}
 	valueList = append(valueList, map[string]interface{}{
-		"采购金额（元）": fmt.Sprintf("%0.2f", totalPrice),
-		"已结金额（元）": fmt.Sprintf("%0.2f", finishPrice),
-		"未结金额（元）": fmt.Sprintf("%0.2f", unFinishPrice),
+		"采购金额（元）": fmt.Sprintf("采购金额合计（元）: %0.2f", totalPrice),
+		"已结金额（元）": fmt.Sprintf("已结金额合计（元）: %0.2f", finishPrice),
+		"未结金额（元）": fmt.Sprintf("未结金额合计（元）: %0.2f", unFinishPrice),
 	})
 
 	return utils.ExportExcel(keyList, valueList, []string{"D", "E", "F", "G", "H", "I"})

@@ -16,7 +16,7 @@ func main() {
 
 	go service.Ticker()
 	router := initialize.InitRouters()
-	err := router.Run(":8090")
+	err := router.Run()
 	if err != nil {
 		logrus.Fatalln("Failed to start router", err.Error())
 		return

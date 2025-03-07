@@ -15,24 +15,28 @@ func ExportExcel(key []string, value []map[string]interface{}, redCol []string) 
 		return nil, err
 	}
 
+	colWidthMap := make(map[string]int)
 	for i, k := range key {
-		cell := fmt.Sprintf("%s1", getExcelColumnName(i))
+		col := getExcelColumnName(i)
+		cell := fmt.Sprintf("%s1", col)
 		err = f.SetCellValue(sheetName, cell, k)
 		if err != nil {
 			return nil, err
 		}
+		setColWidthMap(colWidthMap, col, len(fmt.Sprintf("%v", k)))
 	}
 
 	var num int = 1
 	for n, v := range value {
 		for i, k := range key {
-			cell := fmt.Sprintf("%s%d", getExcelColumnName(i), n+2)
+			col := getExcelColumnName(i)
+			cell := fmt.Sprintf("%s%d", col, n+2)
 			err = f.SetCellValue(sheetName, cell, v[k])
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, col, len(fmt.Sprintf("%v", v[k])))
 		}
-
 		num++
 	}
 
@@ -61,6 +65,20 @@ func ExportExcel(key []string, value []map[string]interface{}, redCol []string) 
 		}
 	}
 
+	// 应用列宽设置
+	for col, width := range colWidthMap {
+		if float64(width)+0.5 <= 10 {
+			err = f.SetColWidth(sheetName, col, col, 10)
+		} else if float64(width)+0.5 >= 20 {
+			err = f.SetColWidth(sheetName, col, col, float64(width)*0.8)
+		} else {
+			err = f.SetColWidth(sheetName, col, col, float64(width)+0.5)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return f, nil
 }
 
@@ -73,4 +91,14 @@ func getExcelColumnName(n int) string {
 		n /= 26
 	}
 	return result
+}
+
+func setColWidthMap(m map[string]int, col string, l int) {
+	if n, ok := m[col]; ok {
+		if l > n {
+			m[col] = l
+		}
+	} else {
+		m[col] = l
+	}
 }

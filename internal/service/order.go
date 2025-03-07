@@ -16,11 +16,15 @@ import (
 	"warehouse_oa/utils"
 )
 
-func GetOrderList(order *models.Order, customerStr, begTime, endTime string, pn, pSize int, userId int) (
+func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string, pn, pSize int, userId int) (
 	interface{}, error) {
 
 	db := global.Db.Model(&models.Order{})
 
+	if ids != "" {
+		slice := strings.Split(ids, ",")
+		db = db.Where("id in ?", slice)
+	}
 	if order.OrderNumber != "" {
 		slice := strings.Split(order.OrderNumber, ";")
 		db = db.Where("order_number in ?", slice)
@@ -546,11 +550,11 @@ func GetOrderByCustomer(customerId int) error {
 	return err
 }
 
-func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string, pn, pSize int,
+func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime string, pn, pSize int,
 	costStatus, userId int) (
 	*excelize.File, error) {
 
-	i, err := GetOrderList(order, customerStr, begTime, endTime, pn, pSize, userId)
+	i, err := GetOrderList(order, ids, customerStr, begTime, endTime, pn, pSize, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +583,6 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		"产品规格",    //"产品规格"
 		"单价（元）",   //"单价（元）"
 		"数量",      //"数量"
-		"订单分配",    //"订单分配"
 		"销售金额（元）", //"销售金额（元）"
 		"成本（元）",   //"成本（元）"
 		"利润（元）",   //"利润（元）"
@@ -604,12 +607,14 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		return nil, err
 	}
 
+	colWidthMap := make(map[string]int)
 	for i, k := range keyList {
 		cell := fmt.Sprintf("%s%d", getExcelColumnName(i), row)
 		err = f.SetCellValue(sheetName, cell, k)
 		if err != nil {
 			return nil, err
 		}
+		setColWidthMap(colWidthMap, "A", len(k))
 	}
 
 	for _, v := range orderList {
@@ -628,116 +633,127 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 		totalPrice += v.TotalPrice
 		finishPrice += v.FinishPrice
 		totalCost += v.Cost
+
 		for _, op := range v.OrderProduct {
 			row++
-			var userListStr string
-			for _, name := range op.UserList {
-				userListStr += name.Nickname + ";"
-			}
 			cell = fmt.Sprintf("%s%d", "A", row)
 			err = f.SetCellValue(sheetName, cell, v.OrderNumber)
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "A", len(v.OrderProduct))
 			cell = fmt.Sprintf("%s%d", "B", row)
 			err = f.SetCellValue(sheetName, cell, v.Customer.Name)
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "B", len(v.Customer.Name))
 			cell = fmt.Sprintf("%s%d", "C", row)
 			err = f.SetCellValue(sheetName, cell, op.ProductName)
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "C", len(op.ProductName))
 			cell = fmt.Sprintf("%s%d", "D", row)
 			err = f.SetCellValue(sheetName, cell, op.Specification)
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "D", len(op.Specification))
 			cell = fmt.Sprintf("%s%d", "E", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%.2f", op.Price))
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "E", len(fmt.Sprintf("%.2f", op.Price)))
 			cell = fmt.Sprintf("%s%d", "F", row)
 			err = f.SetCellValue(sheetName, cell, op.Amount)
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "F", 8)
 			cell = fmt.Sprintf("%s%d", "G", row)
-			err = f.SetCellValue(sheetName, cell, userListStr)
-			if err != nil {
-				return nil, err
-			}
-			cell = fmt.Sprintf("%s%d", "H", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%.2f", op.Price*float64(op.Amount)))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "I", row)
+			setColWidthMap(colWidthMap, "G", len(fmt.Sprintf("%.2f", op.Price*float64(op.Amount))))
+			cell = fmt.Sprintf("%s%d", "H", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.Cost))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "J", row)
+			setColWidthMap(colWidthMap, "H", len(fmt.Sprintf("%0.2f", v.Cost)))
+			cell = fmt.Sprintf("%s%d", "I", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.Profit))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "K", row)
-			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.GrossMargin))
+			setColWidthMap(colWidthMap, "I", len(fmt.Sprintf("%0.2f", v.Profit)))
+			cell = fmt.Sprintf("%s%d", "J", row)
+			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f%%", v.GrossMargin))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "L", row)
+			setColWidthMap(colWidthMap, "J", len(fmt.Sprintf("%0.2f%%", v.GrossMargin)))
+			cell = fmt.Sprintf("%s%d", "K", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.TotalPrice))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "M", row)
+			setColWidthMap(colWidthMap, "K", len(fmt.Sprintf("%0.2f", v.TotalPrice)))
+			cell = fmt.Sprintf("%s%d", "L", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.FinishPrice))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "N", row)
+			setColWidthMap(colWidthMap, "L", len(fmt.Sprintf("%0.2f", v.FinishPrice)))
+			cell = fmt.Sprintf("%s%d", "M", row)
 			err = f.SetCellValue(sheetName, cell, fmt.Sprintf("%0.2f", v.TotalPrice-v.FinishPrice))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "O", row)
-			err = f.SetCellValue(sheetName, cell, v.SaleDate.Format("2006-01-02 15:04:05"))
+			setColWidthMap(colWidthMap, "M", len(fmt.Sprintf("%0.2f", v.TotalPrice-v.FinishPrice)))
+			cell = fmt.Sprintf("%s%d", "N", row)
+			err = f.SetCellValue(sheetName, cell, v.SaleDate.Format("2006-01-02"))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "P", row)
+			setColWidthMap(colWidthMap, "N", len(v.SaleDate.Format("2006-01-02")))
+			cell = fmt.Sprintf("%s%d", "O", row)
 			err = f.SetCellValue(sheetName, cell, returnStatus(v.Status))
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "Q", row)
+			setColWidthMap(colWidthMap, "O", len(returnStatus(v.Status)))
+			cell = fmt.Sprintf("%s%d", "P", row)
 			err = f.SetCellValue(sheetName, cell, v.Salesman)
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "R", row)
+			setColWidthMap(colWidthMap, "P", len(v.Salesman))
+			cell = fmt.Sprintf("%s%d", "Q", row)
 			err = f.SetCellValue(sheetName, cell, v.Remark)
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "S", row)
+			setColWidthMap(colWidthMap, "Q", len(v.Remark))
+			cell = fmt.Sprintf("%s%d", "R", row)
 			err = f.SetCellValue(sheetName, cell, v.Operator)
 			if err != nil {
 				return nil, err
 			}
-			cell = fmt.Sprintf("%s%d", "T", row)
-			err = f.SetCellValue(sheetName, cell, v.UpdatedAt.Format("2006-01-02 15:04:05"))
+			setColWidthMap(colWidthMap, "R", len(v.Operator))
+			cell = fmt.Sprintf("%s%d", "S", row)
+			err = f.SetCellValue(sheetName, cell, v.UpdatedAt.Format("2006-01-02"))
 			if err != nil {
 				return nil, err
 			}
+			setColWidthMap(colWidthMap, "S", len(v.UpdatedAt.Format("2006-01-02")))
 		}
 
 		// 合并同一订单
-		columnList := []string{"A", "B", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"}
+		columnList := []string{"A", "B", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S"}
 		for _, c := range columnList {
 			err = f.MergeCell(sheetName,
 				fmt.Sprintf("%s%d", c, rowCopy),
@@ -782,7 +798,7 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 			return nil, err
 		}
 	}
-	yellowBackList := []string{"I", "J", "K"}
+	yellowBackList := []string{"H", "I", "J"}
 	yellowBackStyle, err := f.NewStyle(&excelize.Style{
 		Alignment: &excelize.Alignment{
 			Horizontal: "center",
@@ -810,47 +826,67 @@ func ExportOrderExecl(order *models.Order, customerStr, begTime, endTime string,
 	if err != nil {
 		return nil, err
 	}
-	cell = fmt.Sprintf("%s%d", "M", row)
+	setColWidthMap(colWidthMap, "A", len(fmt.Sprintf("总订单数: %d", len(orderList))))
+	cell = fmt.Sprintf("%s%d", "L", row)
 	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("已结合计: %0.2f", finishPrice))
 	if err != nil {
 		return nil, err
 	}
-	cell = fmt.Sprintf("%s%d", "N", row)
+	setColWidthMap(colWidthMap, "L", len(fmt.Sprintf("已结合计: %0.2f", finishPrice)))
+	cell = fmt.Sprintf("%s%d", "M", row)
 	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("未结合计: %0.2f", totalPrice-finishPrice))
 	if err != nil {
 		return nil, err
 	}
-	cell = fmt.Sprintf("%s%d", "I", row)
+	setColWidthMap(colWidthMap, "M", len(fmt.Sprintf("未结合计: %0.2f", totalPrice-finishPrice)))
+	cell = fmt.Sprintf("%s%d", "H", row)
 	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("成本合计: %0.2f", sumCost))
 	if err != nil {
 		return nil, err
 	}
-	cell = fmt.Sprintf("%s%d", "J", row)
+	setColWidthMap(colWidthMap, "H", len(fmt.Sprintf("成本合计: %0.2f", sumCost)))
+	cell = fmt.Sprintf("%s%d", "I", row)
 	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("利润合计: %0.2f", totalPrice-sumCost))
 	if err != nil {
 		return nil, err
 	}
-	cell = fmt.Sprintf("%s%d", "L", row)
+	setColWidthMap(colWidthMap, "I", len(fmt.Sprintf("利润合计: %0.2f", totalPrice-sumCost)))
+	cell = fmt.Sprintf("%s%d", "K", row)
 	err = f.SetCellValue(sheetName, cell, fmt.Sprintf("订单总额合计: %0.2f", totalPrice))
 	if err != nil {
 		return nil, err
 	}
+	setColWidthMap(colWidthMap, "K", len(fmt.Sprintf("订单总额合计: %0.2f", totalPrice)))
 
 	err = f.DuplicateRowTo(sheetName, row, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	if costStatus == 0 {
-		err = f.RemoveCol("Sheet1", "K")
+	// 应用列宽设置
+	for col, width := range colWidthMap {
+		if float64(width)+0.5 <= 10 {
+			err = f.SetColWidth(sheetName, col, col, 10)
+		} else if float64(width)+0.5 >= 20 {
+			err = f.SetColWidth(sheetName, col, col, float64(width)*0.8)
+		} else {
+			err = f.SetColWidth(sheetName, col, col, float64(width)+0.5)
+		}
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if costStatus == 0 {
 		err = f.RemoveCol("Sheet1", "J")
 		if err != nil {
 			return nil, err
 		}
 		err = f.RemoveCol("Sheet1", "I")
+		if err != nil {
+			return nil, err
+		}
+		err = f.RemoveCol("Sheet1", "H")
 		if err != nil {
 			return nil, err
 		}
@@ -882,4 +918,14 @@ func getExcelColumnName(n int) string {
 		n /= 26
 	}
 	return result
+}
+
+func setColWidthMap(m map[string]int, col string, l int) {
+	if n, ok := m[col]; ok {
+		if l > n {
+			m[col] = l
+		}
+	} else {
+		m[col] = l
+	}
 }
