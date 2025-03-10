@@ -10,6 +10,7 @@ import (
 	"warehouse_oa/internal/handler/order"
 	"warehouse_oa/internal/handler/product"
 	"warehouse_oa/internal/handler/user"
+	v1 "warehouse_oa/internal/handler/v1"
 	"warehouse_oa/internal/middlewares"
 )
 
@@ -34,6 +35,7 @@ func InitRouters() *gin.Engine {
 		order.InitOrderRouter(group)
 		ecomm.InitECommerceRouter(group)
 		product.InitProductRouter(group)
+		v1.InitV1Router(group)
 	}
 
 	user.InitPermissionRouter(group)

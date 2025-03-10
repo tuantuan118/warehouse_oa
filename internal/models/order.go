@@ -4,16 +4,17 @@ import "time"
 
 type Order struct {
 	BaseModel
-	OrderNumber    string          `gorm:"type:varchar(256);not null" json:"orderNumber"`
-	TotalPrice     float64         `gorm:"type:decimal(10,2)" json:"totalPrice"`     // 总价
-	FinishPrice    float64         `gorm:"type:decimal(10,2)" json:"finishPrice"`    // 已结金额
-	PaymentHistory string          `gorm:"type:varchar(1024)" json:"paymentHistory"` // 结账记录
-	Status         int             `gorm:"type:int(11);not null" json:"status"`      // 1:待出库 2:未完成支付 3:已支付 4:作废
-	CustomerId     int             `gorm:"type:int(11);not null" json:"customerId"`  // 客户ID
-	Customer       *Customer       `gorm:"foreignKey:CustomerId" json:"customer"`
-	Salesman       string          `gorm:"type:varchar(256)" json:"salesman"` // 销售人员
-	SaleDate       time.Time       `gorm:"type:Time;not null" json:"saleDate"`
-	OrderProduct   []*OrderProduct `gorm:"foreignKey:OrderId;references:ID" json:"orderProduct"`
+	OrderNumber      string          `gorm:"type:varchar(256);not null" json:"orderNumber"`
+	TotalPrice       float64         `gorm:"type:decimal(10,2)" json:"totalPrice"`     // 总价
+	FinishPrice      float64         `gorm:"type:decimal(10,2)" json:"finishPrice"`    // 已结金额
+	PaymentHistory   string          `gorm:"type:varchar(1024)" json:"paymentHistory"` // 结账记录
+	Status           int             `gorm:"type:int(11);not null" json:"status"`      // 1:待出库 2:未完成支付 3:已支付 4:作废
+	CustomerId       int             `gorm:"type:int(11);not null" json:"customerId"`  // 客户ID
+	Customer         *Customer       `gorm:"foreignKey:CustomerId" json:"customer"`
+	Salesman         string          `gorm:"type:varchar(256)" json:"salesman"` // 销售人员
+	SaleDate         time.Time       `gorm:"type:Time;not null" json:"saleDate"`
+	OrderProduct     []*OrderProduct `gorm:"foreignKey:OrderId;references:ID" json:"orderProduct"`
+	OutgoingQuantity int             `gorm:"type:int(11);default:0" json:"outgoingQuantity"`
 
 	PaymentHistoryList []map[string]string `gorm:"-" json:"paymentHistoryList"`
 	Profit             float64             `gorm:"-" json:"profit"`

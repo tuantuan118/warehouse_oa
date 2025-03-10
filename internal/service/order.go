@@ -146,6 +146,21 @@ func GetOrderById(id int) (*models.Order, error) {
 	return data, err
 }
 
+func GetOrderProductById(id int) (*models.OrderProduct, error) {
+	db := global.Db.Model(&models.OrderProduct{})
+
+	data := &models.OrderProduct{}
+	db = db.Preload("UserList")
+	db = db.Preload("Ingredient")
+	db = db.Preload("UseFinished")
+	err := db.Where("id = ?", id).First(&data).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("user does not exist")
+	}
+
+	return data, err
+}
+
 func SaveOrder(order *models.Order) (*models.Order, error) {
 	var err error
 
@@ -237,8 +252,31 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 }
 
 // OutOfStock 出库
-func OutOfStock(id int, username string) error {
-	order, err := GetOrderById(id)
+func OutOfStock(orderId, orderProductId, userId int, username string) error {
+	order, err := GetOrderById(orderId)
+	if err != nil {
+		return err
+	}
+	op, err := GetOrderProductById(orderProductId)
+	if err != nil {
+		return err
+	}
+
+	b, err := getAdmin(userId)
+	if err != nil {
+		return err
+	}
+	if !b {
+		for _, user := range op.UserList {
+			if user.Nickname == username {
+				b = true
+				continue
+			}
+		}
+		if !b {
+			return errors.New("没有操作权限")
+		}
+	}
 
 	db := global.Db
 	tx := db.Begin()
@@ -250,36 +288,37 @@ func OutOfStock(id int, username string) error {
 		}
 	}()
 
-	// 修改出库状态
-	order.Status = 2
-	order.Operator = username
-
 	// 消耗成品
-	for _, od := range order.OrderProduct {
-		for _, u := range od.UseFinished {
-			err = DeductFinishedStock(tx, order, &models.FinishedStock{
-				FinishedId: u.FinishedId,
-				Amount:     u.Quantity * float64(od.Amount),
-			})
-			if err != nil {
-				return err
-			}
+	for _, u := range op.UseFinished {
+		err = DeductFinishedStock(tx, order, &models.FinishedStock{
+			FinishedId: u.FinishedId,
+			Amount:     u.Quantity * float64(op.Amount),
+		})
+		if err != nil {
+			return err
 		}
-		// 消耗附加材料
-		for _, ingredient := range od.Ingredient {
-			err = DeductOrderAttach(tx, order,
-				&models.IngredientStock{
-					IngredientId: ingredient.IngredientId,
-					StockNum:     ingredient.Quantity * float64(od.Amount),
-					StockUnit:    ingredient.StockUnit,
-				})
-			if err != nil {
-				return err
-			}
+	}
+	// 消耗附加材料
+	for _, ingredient := range op.Ingredient {
+		err = DeductOrderAttach(tx, order,
+			&models.IngredientStock{
+				IngredientId: ingredient.IngredientId,
+				StockNum:     ingredient.Quantity * float64(op.Amount),
+				StockUnit:    ingredient.StockUnit,
+			})
+		if err != nil {
+			return err
 		}
 	}
 
-	err = tx.Select("status", "operator").Updates(&order).Error
+	// 修改出库状态
+	order.OutgoingQuantity += 1
+	order.Operator = username
+	if order.OutgoingQuantity == len(order.OrderProduct) {
+		order.Status = 2
+	}
+
+	err = tx.Select("status", "operator", "outgoing_quantity").Updates(&order).Error
 
 	return err
 }
@@ -577,25 +616,25 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 	)
 
 	keyList := []string{
-		"订单编号",    //"订单编号"
-		"客户名称",    //"客户名称"
-		"产品名称",    //"产品名称"
-		"产品规格",    //"产品规格"
-		"单价（元）",   //"单价（元）"
-		"数量",      //"数量"
+		"订单编号",     //"订单编号"
+		"客户名称",     //"客户名称"
+		"产品名称",     //"产品名称"
+		"产品规格",     //"产品规格"
+		"单价（元）",     //"单价（元）"
+		"数量",         //"数量"
 		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",   //"成本（元）"
-		"利润（元）",   //"利润（元）"
-		"毛利率",     //"毛利率"
+		"成本（元）",     //"成本（元）"
+		"利润（元）",     //"利润（元）"
+		"毛利率",       //"毛利率"
 		"订单总额（元）", //"订单总额（元）"
 		"已结金额（元）", //"已结金额（元）"
 		"未结金额（元）", //"未结金额（元）"
-		"销售日期",    //"销售日期"
-		"订单状态",    //"订单状态"
-		"销售人员",    //"销售人员"
-		"备注",      //"备注"
-		"更新人员",    //"更新人员"
-		"更新时间",    //"更新时间"
+		"销售日期",     //"销售日期"
+		"订单状态",     //"订单状态"
+		"销售人员",     //"销售人员"
+		"备注",         //"备注"
+		"更新人员",     //"更新人员"
+		"更新时间",     //"更新时间"
 	}
 
 	var row int = 1 // 行数

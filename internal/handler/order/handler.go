@@ -3,6 +3,7 @@ package order
 import (
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"strconv"
 	"warehouse_oa/internal/handler"
 	"warehouse_oa/internal/models"
 	"warehouse_oa/internal/service"
@@ -141,15 +142,21 @@ func (*Order) void(c *gin.Context) {
 }
 
 func (*Order) outOfStock(c *gin.Context) {
-	order := &models.Order{}
-	if err := c.ShouldBindJSON(order); err != nil {
+	type outStock struct {
+		OrderId        int `form:"orderId" json:"orderId" binding:"required"`
+		OrderProductId int `form:"orderProductId" json:"orderProductId" binding:"required"`
+	}
+	var o outStock
+	if err := c.ShouldBindJSON(&o); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	order.Operator = c.GetString("userName")
-	err := service.OutOfStock(order.ID, order.Operator)
+	userIdStr := c.GetString("userName")
+	userId, _ := strconv.Atoi(userIdStr)
+	operator := c.GetString("userName")
+	err := service.OutOfStock(o.OrderId, o.OrderProductId, userId, operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

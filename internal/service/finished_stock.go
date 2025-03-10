@@ -100,12 +100,12 @@ func DeductFinishedStock(db *gorm.DB, order *models.Order,
 		}
 
 		stock := &models.FinishedStock{}
-		err = global.Db.Model(&models.FinishedStock{}).
+		err = db.Model(&models.FinishedStock{}).
 			Where("finished_id = ?", finishedStock.FinishedId).
-			Where("amount > ?", finishedStock.Amount).
+			Where("amount > ?", 0).
 			Order("add_time asc").First(&stock).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("库存不足")
+			return errors.New(fmt.Sprintf("id: %d 成品库存不足", finishedStock.FinishedId))
 		}
 		if err != nil {
 			return err
@@ -140,7 +140,7 @@ func DeductFinishedStock(db *gorm.DB, order *models.Order,
 				OrderId:          &order.ID,
 				FinishedId:       stock.FinishedId,
 				ProductionId:     stock.ProductionId,
-				StockNum:         0 - finishedStock.Amount,
+				StockNum:         0 - stock.Amount,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("【%s】销售出库", order.OrderNumber),
 			})

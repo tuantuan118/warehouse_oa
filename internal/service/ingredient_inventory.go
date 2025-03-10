@@ -172,13 +172,13 @@ func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 		}
 
 		stock := &models.IngredientStock{}
-		err = global.Db.Model(&models.IngredientStock{}).
+		err = db.Model(&models.IngredientStock{}).
 			Where("ingredient_id = ?", *ingredientStock.IngredientId).
 			Where("stock_unit = ?", ingredientStock.StockUnit).
-			Where("stock_num > ?", ingredientStock.StockNum).
+			Where("stock_num > ?", 0).
 			Order("add_time asc").First(&stock).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("库存不足")
+			return errors.New(fmt.Sprintf("id: %d 配料库存不足", *ingredientStock.IngredientId))
 		}
 		if err != nil {
 			return err
@@ -208,7 +208,6 @@ func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 			if err != nil {
 				return err
 			}
-
 			ingredientStock.StockNum = 0
 		} else {
 			_, err = SaveConsume(db, &models.IngredientConsume{
@@ -219,7 +218,7 @@ func DeductStock(db *gorm.DB, production *models.FinishedProduction,
 				IngredientId:     stock.IngredientId,
 				ProductionId:     &production.ID,
 				InBoundId:        stock.InBoundId,
-				StockNum:         0 - ingredientStock.StockNum,
+				StockNum:         0 - stock.StockNum,
 				StockUnit:        ingredientStock.StockUnit,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
@@ -254,7 +253,7 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 			Where("stock_num > ?", 0).
 			Order("add_time asc").First(&stock).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("库存不足")
+			return errors.New(fmt.Sprintf("id: %d 附加材料库存不足", *ingredientStock.IngredientId))
 		}
 		if err != nil {
 			return err
@@ -273,7 +272,7 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 				InBoundId:        stock.InBoundId,
 				OrderId:          &order.ID,
 				StockNum:         0 - ingredientStock.StockNum,
-				StockUnit:        stock.StockUnit,
+				StockUnit:        ingredientStock.StockUnit,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("订单【%s】附加材料", order.OrderNumber),
 			})
@@ -283,7 +282,6 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 			if err != nil {
 				return err
 			}
-
 			ingredientStock.StockNum = 0
 		} else {
 			_, err = SaveConsume(db, &models.IngredientConsume{
@@ -293,8 +291,8 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 				IngredientId:     stock.IngredientId,
 				InBoundId:        stock.InBoundId,
 				OrderId:          &order.ID,
-				StockNum:         0 - ingredientStock.StockNum,
-				StockUnit:        stock.StockUnit,
+				StockNum:         0 - stock.StockNum,
+				StockUnit:        ingredientStock.StockUnit,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("订单【%s】附加材料", order.OrderNumber),
 			})

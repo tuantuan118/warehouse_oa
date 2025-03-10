@@ -86,7 +86,7 @@ func (*Gallery) fields(c *gin.Context) {
 }
 
 func (*Gallery) uploads(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<20)
 	
 	form, err := c.MultipartForm()
 	if err != nil {

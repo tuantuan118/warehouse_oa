@@ -37,14 +37,14 @@ func GetProductionList(production *models.FinishedProduction,
 		db = db.Order("id desc").Limit(pSize).Offset(offset)
 	}
 
-	var data []models.FinishedProduction
+	var data []*models.FinishedProduction
 	err := db.Find(&data).Error
 	if err != nil {
 		return nil, err
 	}
 
 	for _, item := range data {
-		cost, err := GetCostByProduction(item.ID, 0)
+		cost, err := GetCostByProduction(item.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -118,6 +118,12 @@ func GetProductionById(id int) (*models.FinishedProduction, error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("成品报工不存在")
 	}
+
+	cost, err := GetCostByProduction(data.ID)
+	if err != nil {
+		return nil, err
+	}
+	data.Cost = cost
 
 	return data, err
 }
