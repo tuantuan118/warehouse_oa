@@ -312,13 +312,20 @@ func OutOfStock(orderId, orderProductId, userId int, username string) error {
 	}
 
 	// 修改出库状态
-	order.OutgoingQuantity += 1
+	op.Status = true
+	err = tx.Select("status").Updates(&op).Error
+
+	var outNum int
+	for _, o := range order.OrderProduct {
+		if o.Status {
+			outNum++
+		}
+	}
 	order.Operator = username
-	if order.OutgoingQuantity == len(order.OrderProduct) {
+	if outNum+1 == len(order.OrderProduct) {
 		order.Status = 2
 	}
-
-	err = tx.Select("status", "operator", "outgoing_quantity").Updates(&order).Error
+	err = tx.Select("status", "operator").Updates(&order).Error
 
 	return err
 }
@@ -616,25 +623,25 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 	)
 
 	keyList := []string{
-		"订单编号",     //"订单编号"
-		"客户名称",     //"客户名称"
-		"产品名称",     //"产品名称"
-		"产品规格",     //"产品规格"
-		"单价（元）",     //"单价（元）"
-		"数量",         //"数量"
+		"订单编号",    //"订单编号"
+		"客户名称",    //"客户名称"
+		"产品名称",    //"产品名称"
+		"产品规格",    //"产品规格"
+		"单价（元）",   //"单价（元）"
+		"数量",      //"数量"
 		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",     //"成本（元）"
-		"利润（元）",     //"利润（元）"
-		"毛利率",       //"毛利率"
+		"成本（元）",   //"成本（元）"
+		"利润（元）",   //"利润（元）"
+		"毛利率",     //"毛利率"
 		"订单总额（元）", //"订单总额（元）"
 		"已结金额（元）", //"已结金额（元）"
 		"未结金额（元）", //"未结金额（元）"
-		"销售日期",     //"销售日期"
-		"订单状态",     //"订单状态"
-		"销售人员",     //"销售人员"
-		"备注",         //"备注"
-		"更新人员",     //"更新人员"
-		"更新时间",     //"更新时间"
+		"销售日期",    //"销售日期"
+		"订单状态",    //"订单状态"
+		"销售人员",    //"销售人员"
+		"备注",      //"备注"
+		"更新人员",    //"更新人员"
+		"更新时间",    //"更新时间"
 	}
 
 	var row int = 1 // 行数
