@@ -51,7 +51,7 @@ func GetUpdate(update, updateTime string) (int64, error) {
 		return 0, errors.New("查询刷新接口参数错误")
 	}
 	var num int64
-	if err := db.Where("DATE_FORMAT(update_time, '%Y-%m-%d') >= ?", updateTime).Count(&num).Error; err != nil {
+	if err := db.Where("update_time >= ?", updateTime).Count(&num).Error; err != nil {
 		return 0, err
 	}
 
