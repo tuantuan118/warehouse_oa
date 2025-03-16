@@ -191,7 +191,6 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 		if err != nil {
 			return nil, err
 		}
-		orderProduct.ProductName = product.Name
 		orderProduct.Specification = product.Specification
 
 		orderProduct.Images = strings.Join(orderProduct.ImageList, ";")
@@ -434,21 +433,12 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	var i, sumAmount int
 	var sumTotalPrice float64
 	for _, p := range order.OrderProduct {
-		var productId int
-		product, err := GetProductByIndex(p.ProductName, p.Specification)
-		if err != nil {
-			return nil, err
-		}
-		if product != nil {
-			productId = product.ID
-		}
-
 		num := 10 + i
 		err = f.DuplicateRow("Sheet1", num)
 		if err != nil {
 			return nil, err
 		}
-		if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", num), productId); err != nil {
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", num), p.ProductId); err != nil {
 			return nil, err
 		}
 		if err := f.SetCellValue("Sheet1", fmt.Sprintf("C%d", num), p.ProductName); err != nil {
@@ -624,25 +614,25 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 	)
 
 	keyList := []string{
-		"订单编号",    //"订单编号"
-		"客户名称",    //"客户名称"
-		"产品名称",    //"产品名称"
-		"产品规格",    //"产品规格"
-		"单价（元）",   //"单价（元）"
-		"数量",      //"数量"
+		"订单编号",     //"订单编号"
+		"客户名称",     //"客户名称"
+		"产品名称",     //"产品名称"
+		"产品规格",     //"产品规格"
+		"单价（元）",     //"单价（元）"
+		"数量",         //"数量"
 		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",   //"成本（元）"
-		"利润（元）",   //"利润（元）"
-		"毛利率",     //"毛利率"
+		"成本（元）",     //"成本（元）"
+		"利润（元）",     //"利润（元）"
+		"毛利率",       //"毛利率"
 		"订单总额（元）", //"订单总额（元）"
 		"已结金额（元）", //"已结金额（元）"
 		"未结金额（元）", //"未结金额（元）"
-		"销售日期",    //"销售日期"
-		"订单状态",    //"订单状态"
-		"销售人员",    //"销售人员"
-		"备注",      //"备注"
-		"更新人员",    //"更新人员"
-		"更新时间",    //"更新时间"
+		"销售日期",     //"销售日期"
+		"订单状态",     //"订单状态"
+		"销售人员",     //"销售人员"
+		"备注",         //"备注"
+		"更新人员",     //"更新人员"
+		"更新时间",     //"更新时间"
 	}
 
 	var row int = 1 // 行数
