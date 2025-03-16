@@ -575,11 +575,12 @@ func GetOrderFieldList(field string, userId int) ([]string, error) {
 
 func getTodayOrderCount() (int64, error) {
 	today := time.Now().Format("2006-01-02")
-	startOfDay, _ := time.Parse("2006-01-02", today)
+	startOfDay, _ := time.Parse("2006-01-02 15:04:05", today)
+	startOfDayStr := startOfDay.Format("2006-01-02")
 
 	var total int64
 	err := global.Db.Model(&models.Order{}).Where(
-		"add_time >= ?", startOfDay).Count(&total).Error
+		"add_time >= ?", startOfDayStr).Count(&total).Error
 
 	return total, err
 }
