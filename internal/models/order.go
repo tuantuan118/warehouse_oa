@@ -11,7 +11,6 @@ type Order struct {
 	Status         int             `gorm:"type:int(11);not null" json:"status"`      // 1:待出库 2:未完成支付 3:已支付 4:作废
 	CustomerId     int             `gorm:"type:int(11);not null" json:"customerId"`  // 客户ID
 	Customer       *Customer       `gorm:"foreignKey:CustomerId" json:"customer"`
-	Salesman       string          `gorm:"type:varchar(256)" json:"salesman"` // 销售人员
 	SaleDate       time.Time       `gorm:"type:Time;not null" json:"saleDate"`
 	OrderProduct   []*OrderProduct `gorm:"foreignKey:OrderId;references:ID" json:"orderProduct"`
 
@@ -20,6 +19,7 @@ type Order struct {
 	GrossMargin        float64             `gorm:"-" json:"grossMargin"`
 	Cost               float64             `gorm:"-" json:"cost"`
 	UnFinishPrice      float64             `gorm:"-" json:"unFinishPrice"` // 已结金额
+	Salesman           string              `gorm:"-" json:"salesman"`      // 销售人员
 }
 
 type OrderProduct struct {

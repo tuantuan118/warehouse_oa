@@ -34,7 +34,7 @@ func InitRouters() *gin.Engine {
 		gallery.InitGalleryRouter(group)
 		order.InitOrderRouter(group)
 		ecomm.InitECommerceRouter(group)
-		product.InitProductRouter(group)
+		product.InitAllProductRouter(group)
 		v1.InitV1Router(group)
 	}
 

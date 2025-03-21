@@ -14,7 +14,7 @@ import (
 )
 
 // GetInBoundList 返回入库列表查询数据
-func GetInBoundList(name, stockUnit, begTime, endTime string,
+func GetInBoundList(name, stockUnit, supplier, begTime, endTime string,
 	pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.IngredientInBound{})
 	totalDb := global.Db.Model(&models.IngredientInBound{})
@@ -30,6 +30,11 @@ func GetInBoundList(name, stockUnit, begTime, endTime string,
 	if stockUnit != "" {
 		db = db.Where("stock_unit = ?", stockUnit)
 		totalDb = totalDb.Where("stock_unit = ?", stockUnit)
+	}
+	if supplier != "" {
+		slice := strings.Split(supplier, ";")
+		db = db.Where("supplier in ?", slice)
+		totalDb = totalDb.Where("supplier in ?", slice)
 	}
 	if begTime != "" && endTime != "" {
 		db = db.Where("DATE_FORMAT(stock_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)

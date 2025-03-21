@@ -20,24 +20,30 @@ func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string
 	interface{}, error) {
 
 	db := global.Db.Model(&models.Order{})
+	totalDb := global.Db.Model(&models.Order{})
 
 	if ids != "" {
 		slice := strings.Split(ids, ",")
 		db = db.Where("id in ?", slice)
+		totalDb = totalDb.Where("id in ?", slice)
 	}
 	if order.OrderNumber != "" {
 		slice := strings.Split(order.OrderNumber, ";")
 		db = db.Where("order_number in ?", slice)
+		totalDb = totalDb.Where("order_number in ?", slice)
 	}
 	if customerStr != "" {
 		slice := strings.Split(customerStr, ";")
 		db = db.Where("customer_id in ?", slice)
+		totalDb = totalDb.Where("customer_id in ?", slice)
 	}
 	if order.Status != 0 {
 		db = db.Where("status = ?", order.Status)
+		totalDb = totalDb.Where("status = ?", order.Status)
 	}
 	if begTime != "" && endTime != "" {
 		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 	db = db.Preload("Customer")
 	db = db.Preload("OrderProduct.UserList")
@@ -52,7 +58,23 @@ func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string
 		db = db.Where("id in ("+
 			"select order_id from tb_order_product where id in ("+
 			"select order_product_id from tb_order_product_user where user_id = ?))", userId)
+		totalDb = totalDb.Where("id in ("+
+			"select order_id from tb_order_product where id in ("+
+			"select order_product_id from tb_order_product_user where user_id = ?))", userId)
 	}
+
+	// 应结金额
+	var totalPrice float64
+	if err := totalDb.Select("COALESCE(SUM(total_price), 0)").Scan(&totalPrice).Error; err != nil {
+		return nil, err
+	}
+	// 已结金额
+	var finishPrice float64
+	if err := totalDb.Select("COALESCE(SUM(finish_price), 0)").Scan(&finishPrice).Error; err != nil {
+		return nil, err
+	}
+	// 未结金额
+	unFinishPrice := totalPrice - finishPrice
 
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
@@ -70,10 +92,13 @@ func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string
 	logrus.Infoln("len(data)", len(data))
 
 	return map[string]interface{}{
-		"data":       data,
-		"pageNo":     pn,
-		"pageSize":   pSize,
-		"totalCount": total,
+		"data":             data,
+		"pageNo":           pn,
+		"pageSize":         pSize,
+		"totalCount":       total,
+		"sumTotalPrice":    totalPrice,
+		"sumUnFinishPrice": unFinishPrice,
+		"sumFinishPrice":   finishPrice,
 	}, err
 }
 
@@ -287,11 +312,19 @@ func OutOfStock(orderId, orderProductId, userId int, username string) error {
 		}
 	}()
 
+	// 消耗产品库存
+	surplusNum, err := DeductProductStock(tx, op.ProductName, op.Specification, op.Amount)
+	if err != nil {
+		return err
+	}
+	logrus.Infoln("111111111111111111111111111111111111")
+	logrus.Infoln(surplusNum)
+
 	// 消耗成品
 	for _, u := range op.UseFinished {
 		err = DeductFinishedStock(tx, order, &models.FinishedStock{
 			FinishedId: u.FinishedId,
-			Amount:     u.Quantity * float64(op.Amount),
+			Amount:     u.Quantity * float64(surplusNum),
 		})
 		if err != nil {
 			return err
@@ -493,7 +526,7 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 	if err := f.SetCellValue("Sheet1", fmt.Sprintf("D%d", 14+i), D14); err != nil {
 		return nil, err
 	}
-	F14 := fmt.Sprintf("制单人：%s", order.Salesman)
+	F14 := fmt.Sprintf("制单人：%s", order.Customer.Salesman)
 	if err := f.SetCellValue("Sheet1", fmt.Sprintf("F%d", 14+i), F14); err != nil {
 		return nil, err
 	}
@@ -614,25 +647,25 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 	)
 
 	keyList := []string{
-		"订单编号",     //"订单编号"
-		"客户名称",     //"客户名称"
-		"产品名称",     //"产品名称"
-		"产品规格",     //"产品规格"
-		"单价（元）",     //"单价（元）"
-		"数量",         //"数量"
+		"订单编号",    //"订单编号"
+		"客户名称",    //"客户名称"
+		"产品名称",    //"产品名称"
+		"产品规格",    //"产品规格"
+		"单价（元）",   //"单价（元）"
+		"数量",      //"数量"
 		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",     //"成本（元）"
-		"利润（元）",     //"利润（元）"
-		"毛利率",       //"毛利率"
+		"成本（元）",   //"成本（元）"
+		"利润（元）",   //"利润（元）"
+		"毛利率",     //"毛利率"
 		"订单总额（元）", //"订单总额（元）"
 		"已结金额（元）", //"已结金额（元）"
 		"未结金额（元）", //"未结金额（元）"
-		"销售日期",     //"销售日期"
-		"订单状态",     //"订单状态"
-		"销售人员",     //"销售人员"
-		"备注",         //"备注"
-		"更新人员",     //"更新人员"
-		"更新时间",     //"更新时间"
+		"销售日期",    //"销售日期"
+		"订单状态",    //"订单状态"
+		"销售人员",    //"销售人员"
+		"备注",      //"备注"
+		"更新人员",    //"更新人员"
+		"更新时间",    //"更新时间"
 	}
 
 	var row int = 1 // 行数
@@ -764,11 +797,11 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 			}
 			setColWidthMap(colWidthMap, "O", len(returnStatus(v.Status)))
 			cell = fmt.Sprintf("%s%d", "P", row)
-			err = f.SetCellValue(sheetName, cell, v.Salesman)
+			err = f.SetCellValue(sheetName, cell, v.Customer.Salesman)
 			if err != nil {
 				return nil, err
 			}
-			setColWidthMap(colWidthMap, "P", len(v.Salesman))
+			setColWidthMap(colWidthMap, "P", len(v.Customer.Salesman))
 			cell = fmt.Sprintf("%s%d", "Q", row)
 			err = f.SetCellValue(sheetName, cell, v.Remark)
 			if err != nil {

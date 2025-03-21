@@ -31,11 +31,12 @@ func InitInBoundRouter(router *gin.RouterGroup) {
 func (*InBound) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	name := c.DefaultQuery("name", "")
+	supplier := c.DefaultQuery("supplier", "")
 	stockUnit := c.DefaultQuery("stockUnit", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 
-	data, err := service.GetInBoundList(name, stockUnit,
+	data, err := service.GetInBoundList(name, stockUnit, supplier,
 		begTime, endTime, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)

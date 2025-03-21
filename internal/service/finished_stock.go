@@ -89,7 +89,7 @@ func SaveFinishedStock(db *gorm.DB, finished *models.FinishedStock) (*models.Fin
 	return finished, err
 }
 
-// DeductFinishedStock 扣除库存, 并且新增消耗表
+// DeductFinishedStock 订单扣除库存, 并且新增消耗表
 func DeductFinishedStock(db *gorm.DB, order *models.Order,
 	finishedStock *models.FinishedStock) error {
 
@@ -143,6 +143,72 @@ func DeductFinishedStock(db *gorm.DB, order *models.Order,
 				StockNum:         0 - stock.Amount,
 				OperationType:    false,
 				OperationDetails: fmt.Sprintf("【%s】销售出库", order.OrderNumber),
+			})
+
+			finishedStock.Amount -= stock.Amount
+
+			// 删除库存
+			err = db.Delete(&stock).Error
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
+// DeductFinishedStockByProduct 产品扣除库存, 并且新增消耗表
+func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
+	finishedStock *models.FinishedStock) error {
+
+	var err error
+	for {
+		if finishedStock.Amount == 0 {
+			break
+		}
+
+		stock := &models.FinishedStock{}
+		err = db.Model(&models.FinishedStock{}).
+			Where("finished_id = ?", finishedStock.FinishedId).
+			Where("amount > ?", 0).
+			Order("add_time asc").First(&stock).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New(fmt.Sprintf("id: %d 成品库存不足", finishedStock.FinishedId))
+		}
+		if err != nil {
+			return err
+		}
+
+		if stock.Amount > finishedStock.Amount {
+			// 更新库存
+			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
+				BaseModel: models.BaseModel{
+					Operator: product.Operator,
+				},
+				FinishedId:       stock.FinishedId,
+				ProductionId:     stock.ProductionId,
+				StockNum:         0 - finishedStock.Amount,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("产品【%s】新增库存", product.Name),
+			})
+
+			stock.Amount -= finishedStock.Amount
+			err = db.Select("amount").Updates(&stock).Error
+			if err != nil {
+				return err
+			}
+
+			finishedStock.Amount = 0
+		} else {
+			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
+				BaseModel: models.BaseModel{
+					Operator: product.Operator,
+				},
+				FinishedId:       stock.FinishedId,
+				ProductionId:     stock.ProductionId,
+				StockNum:         0 - stock.Amount,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("产品【%s】新增库存", product.Name),
 			})
 
 			finishedStock.Amount -= stock.Amount
