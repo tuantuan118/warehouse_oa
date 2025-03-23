@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"strings"
 	"warehouse_oa/internal/global"
@@ -187,10 +188,14 @@ func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
 				},
 				FinishedId:       stock.FinishedId,
 				ProductionId:     stock.ProductionId,
+				ProductId:        product.ID,
 				StockNum:         0 - finishedStock.Amount,
 				OperationType:    false,
-				OperationDetails: fmt.Sprintf("产品【%s】新增库存", product.Name),
+				OperationDetails: fmt.Sprintf("产品【%s】使用", product.Name),
 			})
+			if err != nil {
+				return err
+			}
 
 			stock.Amount -= finishedStock.Amount
 			err = db.Select("amount").Updates(&stock).Error
@@ -206,10 +211,14 @@ func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
 				},
 				FinishedId:       stock.FinishedId,
 				ProductionId:     stock.ProductionId,
+				ProductId:        product.ID,
 				StockNum:         0 - stock.Amount,
 				OperationType:    false,
-				OperationDetails: fmt.Sprintf("产品【%s】新增库存", product.Name),
+				OperationDetails: fmt.Sprintf("产品【%s】使用", product.Name),
 			})
+			if err != nil {
+				return err
+			}
 
 			finishedStock.Amount -= stock.Amount
 
@@ -221,4 +230,61 @@ func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
 		}
 	}
 	return err
+}
+
+// ReturningInventory 返还库存
+func ReturningInventory(db *gorm.DB, data *models.ProductInventory, amount int) error {
+	logrus.Infoln(data.InventoryContent)
+	for _, ic := range data.InventoryContent {
+		deductNum := float64(amount) * ic.Quantity
+		for {
+			if deductNum == 0 {
+				break
+			}
+
+			// 查找创建时间排序获取最新关联成品的产品库存 (出库)
+			fc := &models.FinishedConsume{}
+			err := db.Model(&models.FinishedConsume{}).
+				Where("product_id = ? and finished_id = ?", data.ProductId, ic.FinishedId).
+				Order("add_time asc").First(&fc).Error
+			if err != nil {
+				return err
+			}
+
+			var numCopy float64
+			if -fc.StockNum >= deductNum {
+				numCopy = deductNum
+				deductNum = 0
+			} else {
+				numCopy = -fc.StockNum
+				deductNum += fc.StockNum
+			}
+
+			err = db.Model(&models.FinishedConsume{}).Create(&models.FinishedConsume{
+				BaseModel: models.BaseModel{
+					Operator: data.Operator,
+				},
+				FinishedId:       fc.FinishedId,
+				ProductionId:     fc.ProductionId,
+				StockNum:         numCopy,
+				OperationType:    false,
+				OperationDetails: fmt.Sprintf("产品【%s】返还库存", data.Product.Name),
+			}).Error
+			if err != nil {
+				return err
+			}
+			err = db.Model(&models.FinishedStock{}).Create(&models.FinishedStock{
+				BaseModel: models.BaseModel{
+					Operator: data.Operator,
+				},
+				FinishedId:   fc.FinishedId,
+				ProductionId: fc.ProductionId,
+				Amount:       numCopy,
+			}).Error
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

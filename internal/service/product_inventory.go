@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"warehouse_oa/internal/global"
@@ -29,8 +30,10 @@ func GetProductInventoryById(id int) (*models.ProductInventory, error) {
 	data := &models.ProductInventory{}
 	err := global.Db.Model(&models.ProductInventory{}).
 		Preload("Product").
+		Preload("InventoryContent").
 		Where("id = ?", id).
 		First(&data).Error
+
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("产品库存不存在")
 	}
@@ -60,12 +63,6 @@ func SaveProductInventory(data *models.ProductInventory) error {
 		return err
 	}
 
-	// 检查是否已存在该产品的库存记录
-	exists, inventory, err := CheckProductInventoryExists(data.ProductId)
-	if err != nil {
-		return err
-	}
-
 	db := global.Db
 	tx := db.Begin()
 	defer func() {
@@ -76,13 +73,18 @@ func SaveProductInventory(data *models.ProductInventory) error {
 		}
 	}()
 
-	if !exists {
-		// 不存在
-		err = db.Model(&models.ProductInventory{}).Create(data).Error
-	} else {
-		// 存在
-		inventory.Amount += data.Amount
-		err = db.Save(inventory).Error
+	for _, content := range product.ProductContent {
+		data.InventoryContent = append(data.InventoryContent, models.InventoryContent{
+			FinishedId: content.FinishedId,
+			Quantity:   content.Quantity,
+		})
+	}
+
+	fmt.Println(product.ProductContent)
+	fmt.Println(data.InventoryContent)
+	err = db.Model(&models.ProductInventory{}).Create(data).Error
+	if err != nil {
+		return err
 	}
 
 	// 消耗成品
@@ -98,29 +100,62 @@ func SaveProductInventory(data *models.ProductInventory) error {
 	return err
 }
 
-// UpdateProductInventory 更新产品库存
+// UpdateProductInventory 扣除产品库存
 func UpdateProductInventory(inventory *models.ProductInventory) error {
 	if inventory.Amount < 0 {
 		return errors.New("参数错误")
 	}
 
-	// 获取现有记录
-	existingInventory, err := GetProductInventoryById(inventory.ID)
-	if err != nil {
-		return err
+	var err error
+	db := global.Db
+	tx := db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	amount := inventory.Amount
+	var data *models.ProductInventory
+	for {
+		if amount <= 0 {
+			break
+		}
+
+		err = db.Model(&models.ProductInventory{}).
+			Preload("Product").
+			Preload("InventoryContent").
+			Where("product_id = ?", inventory.ProductId).
+			Order("add_time asc").First(&data).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("库存不足")
+		}
+		if err != nil {
+			return err
+		}
+
+		data.Operator = inventory.Operator
+		err = ReturningInventory(db, data, amount)
+
+		if data.Amount > amount {
+			data.Amount -= amount
+			amount = 0
+			err = db.Select("amount").Updates(&data).Error
+			if err != nil {
+				return err
+			}
+		} else {
+			// 删除库存
+			amount -= data.Amount
+			err = db.Delete(&data).Error
+			if err != nil {
+				return err
+			}
+		}
 	}
 
-	// 更新记录
-	existingInventory.Amount -= inventory.Amount
-	existingInventory.Operator = inventory.Operator
-
-	if existingInventory.Amount == 0 {
-		err = global.Db.Delete(existingInventory).Error
-	} else if existingInventory.Amount > 0 {
-		err = global.Db.Select("amount", "operator").Updates(existingInventory).Error
-	} else {
-		return errors.New("库存数量不足扣除")
-	}
 	return err
 }
 

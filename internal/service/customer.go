@@ -66,6 +66,9 @@ func DelCustomer(id int) error {
 	}
 
 	err = GetOrderByCustomer(id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return global.Db.Delete(&data).Error
+	}
 	if err != nil {
 		return errors.New("客户已产生订单")
 	}
@@ -79,6 +82,8 @@ func GetCustomerFieldList(field string) ([]string, error) {
 	switch field {
 	case "name":
 		db.Select("name")
+	case "salesman":
+		db.Select("salesman")
 	default:
 		return nil, errors.New("field not exist")
 	}

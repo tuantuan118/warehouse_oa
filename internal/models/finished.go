@@ -52,6 +52,8 @@ type FinishedConsume struct {
 	// 报功ID
 	ProductionId int                 `gorm:"type:int(11)" json:"productionId"`
 	Production   *FinishedProduction `gorm:"foreignKey:ProductionId;" json:"production"`
+	// 产品Id
+	ProductId int `gorm:"type:int(11);default:0" json:"productId"`
 
 	StockNum         float64 `gorm:"type:decimal(16,4)" json:"stockNum"`
 	OperationType    bool    `gorm:"type:bool;default:true" json:"operationType"` // true 表示启用，false 表示禁用

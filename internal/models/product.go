@@ -17,6 +17,16 @@ type ProductContent struct {
 type ProductInventory struct {
 	BaseModel
 	ProductId int      `gorm:"primaryKey;index" json:"productId"`
-	Product   *Product `gorm:"foreignKey:ProductId;" json:"Product"`
+	Product   *Product `gorm:"foreignKey:ProductId;" json:"product"`
 	Amount    int      `gorm:"type:int(11);not null" json:"amount"`
+
+	InventoryContent []InventoryContent `gorm:"foreignKey:InventoryId;" json:"inventoryContent"`
+	// 记录产品使用的成品ID和数量
+
+}
+
+type InventoryContent struct {
+	InventoryId int     `gorm:"primaryKey;index" json:"inventoryId"`
+	FinishedId  int     `gorm:"primaryKey;type:int(11)" json:"finishedId"`
+	Quantity    float64 `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
 }

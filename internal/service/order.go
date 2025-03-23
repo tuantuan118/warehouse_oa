@@ -613,9 +613,6 @@ func GetOrderByCustomer(customerId int) error {
 
 	data := &models.Order{}
 	err := db.Where("customer_id = ?", customerId).First(&data).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New("user does not exist")
-	}
 
 	return err
 }
