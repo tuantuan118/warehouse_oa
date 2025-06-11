@@ -100,27 +100,21 @@ func (*Order) update(c *gin.Context) {
 }
 
 func (*Order) checkoutOrder(c *gin.Context) {
-	order := struct {
-		ID          int     `form:"id" json:"id" binding:"required"`
-		TotalPrice  float64 `json:"totalPrice"`
-		PaymentTime string  `json:"paymentTime"`
-		Operator    string  `json:"operator"`
-	}{}
-
-	if err := c.ShouldBindJSON(&order); err != nil {
+	coos := make([]models.CheckoutOrder, 0)
+	if err := c.ShouldBindJSON(&coos); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	order.Operator = c.GetString("userName")
-	data, err := service.CheckoutOrder(order.ID, order.TotalPrice, order.PaymentTime, order.Operator)
+	operator := c.GetString("userName")
+	err := service.CheckoutOrder(coos, operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
 	}
 
-	handler.Success(c, data)
+	handler.Success(c, nil)
 }
 
 func (*Order) void(c *gin.Context) {

@@ -53,3 +53,10 @@ type UseFinished struct {
 	FinishedId     int     `gorm:"type:int(11)" json:"finishedId"`
 	Quantity       float64 `gorm:"type:decimal(10,4);not null" json:"quantity"` // 用量
 }
+
+type CheckoutOrder struct {
+	ID          int     `form:"id" json:"id" binding:"required"`
+	TotalPrice  float64 `json:"totalPrice"`
+	PaymentTime string  `json:"paymentTime"`
+	Operator    string  `json:"operator"`
+}

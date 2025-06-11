@@ -93,3 +93,10 @@ type IngredientsUsage struct {
 	Cost             float64     `json:"cost"` // 成本
 	CreatedAt        time.Time   `json:"createdAt"`
 }
+
+type FinishInBound struct {
+	ID          int     `form:"id" json:"id" binding:"required"`
+	TotalPrice  float64 `json:"totalPrice"`
+	PaymentTime string  `json:"paymentTime"`
+	Operator    string  `json:"operator"`
+}

@@ -383,36 +383,52 @@ func VoidOrder(id int, username string) error {
 }
 
 // CheckoutOrder 结帐
-func CheckoutOrder(id int, totalPrice float64, paymentTime, operator string) (*models.Order, error) {
-	if id == 0 {
-		return nil, errors.New("id is 0")
+func CheckoutOrder(coos []models.CheckoutOrder, operator string) (err error) {
+	data := new(models.Order)
+	tx := global.Db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	for _, coo := range coos {
+		if coo.ID == 0 {
+			return errors.New("id is 0")
+		}
+		data, err = GetOrderById(coo.ID)
+		if err != nil {
+			return err
+		}
+
+		if data.Status != 2 {
+			return errors.New("订单状态错误，无法付款")
+		}
+
+		data.FinishPrice += coo.TotalPrice
+
+		str := fmt.Sprintf("%s&%0.2f;", coo.PaymentTime, coo.TotalPrice)
+		data.PaymentHistory += str
+
+		if data.TotalPrice-data.FinishPrice > 0 {
+			data.Status = 2
+		} else {
+			data.Status = 3
+		}
+		data.Operator = operator
+
+		err = tx.Select(
+			"finish_price",
+			"payment_history",
+			"operator",
+			"status").Updates(&data).Error
+		if err != nil {
+			return err
+		}
 	}
-	data, err := GetOrderById(id)
-	if err != nil {
-		return nil, err
-	}
-
-	if data.Status != 2 {
-		return nil, errors.New("订单状态错误，无法付款")
-	}
-
-	data.FinishPrice += totalPrice
-
-	str := fmt.Sprintf("%s&%0.2f;", paymentTime, totalPrice)
-	data.PaymentHistory += str
-
-	if data.TotalPrice-data.FinishPrice > 0 {
-		data.Status = 2
-	} else {
-		data.Status = 3
-	}
-	data.Operator = operator
-
-	return data, global.Db.Select(
-		"finish_price",
-		"payment_history",
-		"operator",
-		"status").Updates(&data).Error
+	return nil
 }
 
 func ExportOrder(order *models.Order) ([]byte, error) {

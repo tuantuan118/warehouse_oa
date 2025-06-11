@@ -399,33 +399,49 @@ func ExportIngredients(name, stockUser, begTime, endTime string) (*excelize.File
 }
 
 // FinishInBound 结帐
-func FinishInBound(id int, totalPrice float64, paymentTime, operator string) (*models.IngredientInBound, error) {
-	if id == 0 {
-		return nil, errors.New("id is 0")
+func FinishInBound(bound []models.FinishInBound, operator string) (err error) {
+	data := new(models.IngredientInBound)
+	tx := global.Db.Begin()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	for _, ifb := range bound {
+		if ifb.ID == 0 {
+			return errors.New("id is 0")
+		}
+		data, err = GetInBoundById(ifb.ID)
+		if err != nil {
+			return err
+		}
+
+		if data.Status == 1 {
+			return errors.New("配料已结清，无法付款")
+		}
+
+		data.FinishPrice += ifb.TotalPrice
+
+		str := fmt.Sprintf("%s&%0.2f;", ifb.PaymentTime, ifb.TotalPrice)
+		data.PaymentHistory += str
+
+		if data.TotalPrice-data.FinishPrice > 0 {
+			data.Status = 0
+		} else {
+			data.Status = 1
+		}
+		data.Operator = operator
+
+		err = tx.Select("FinishPrice", "PaymentHistory",
+			"Operator", "Status").Updates(&data).Error
+		if err != nil {
+			return err
+		}
 	}
-	data, err := GetInBoundById(id)
-	if err != nil {
-		return nil, err
-	}
-
-	if data.Status == 1 {
-		return nil, errors.New("配料已结清，无法付款")
-	}
-
-	data.FinishPrice += totalPrice
-
-	str := fmt.Sprintf("%s&%0.2f;", paymentTime, totalPrice)
-	data.PaymentHistory += str
-
-	if data.TotalPrice-data.FinishPrice > 0 {
-		data.Status = 0
-	} else {
-		data.Status = 1
-	}
-	data.Operator = operator
-
-	return data, global.Db.Select("FinishPrice", "PaymentHistory",
-		"Operator", "Status").Updates(&data).Error
+	return nil
 }
 
 // GetSupplier 获取所有供应商

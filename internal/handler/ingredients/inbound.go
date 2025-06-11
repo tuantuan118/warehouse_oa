@@ -101,27 +101,21 @@ func (*InBound) delete(c *gin.Context) {
 }
 
 func (*InBound) finishInBound(c *gin.Context) {
-	inBound := struct {
-		ID          int     `form:"id" json:"id" binding:"required"`
-		TotalPrice  float64 `json:"totalPrice"`
-		PaymentTime string  `json:"paymentTime"`
-		Operator    string  `json:"operator"`
-	}{}
-
-	if err := c.ShouldBindJSON(&inBound); err != nil {
+	fibs := make([]models.FinishInBound, 0)
+	if err := c.ShouldBindJSON(&fibs); err != nil {
 		// 如果解析失败，返回 400 错误和错误信息
 		handler.BadRequest(c, err.Error())
 		return
 	}
 
-	inBound.Operator = c.GetString("userName")
-	data, err := service.FinishInBound(inBound.ID, inBound.TotalPrice, inBound.PaymentTime, inBound.Operator)
+	operator := c.GetString("userName")
+	err := service.FinishInBound(fibs, operator)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
 	}
 
-	handler.Success(c, data)
+	handler.Success(c, nil)
 }
 
 func (*InBound) export(c *gin.Context) {

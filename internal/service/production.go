@@ -162,23 +162,6 @@ func SaveProduction(production *models.FinishedProduction) (*models.FinishedProd
 		return nil, err
 	}
 
-	// 扣除配料库存
-
-	for _, material := range finished.Material {
-		logrus.Info("material.Quantity", material.Quantity)
-		logrus.Info("production.ExpectAmount", production.ExpectAmount)
-
-		err = DeductStock(tx, production,
-			&models.IngredientStock{
-				IngredientId: &material.IngredientId,
-				StockUnit:    material.StockUnit,
-				StockNum:     material.Quantity * float64(production.ExpectAmount),
-			})
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return production, err
 }
 
