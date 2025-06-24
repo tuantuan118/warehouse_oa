@@ -57,9 +57,6 @@ func GetFinishedById(id int) (*models.Finished, error) {
 
 // SaveFinished 新增成品
 func SaveFinished(finished *models.Finished) (*models.Finished, error) {
-	if finished.Material == nil || len(finished.Material) == 0 {
-		return nil, errors.New("配料列表不能为空")
-	}
 	var err error
 
 	for _, material := range finished.Material {
@@ -85,10 +82,6 @@ func UpdateFinished(finished *models.Finished) (*models.Finished, error) {
 	_, err := GetFinishedById(finished.ID)
 	if err != nil {
 		return nil, err
-	}
-
-	if finished.Material == nil || len(finished.Material) == 0 {
-		return nil, errors.New("配料列表不能为空")
 	}
 
 	// 判断配料是否都存在

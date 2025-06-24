@@ -235,6 +235,9 @@ func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
 // ReturningInventory 返还库存
 func ReturningInventory(db *gorm.DB, data *models.ProductInventory, amount int) error {
 	logrus.Infoln(data.InventoryContent)
+	if data.Amount < amount {
+		amount = data.Amount
+	}
 	for _, ic := range data.InventoryContent {
 		deductNum := float64(amount) * ic.Quantity
 		for {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"strings"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
@@ -13,16 +14,34 @@ import (
 func GetProductInventoryList(inventory *models.ProductInventory, pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.ProductInventory{})
 
-	if inventory.ID != 0 {
-		db = db.Where("id = ?", inventory.ID)
-	}
-	if inventory.ProductId != 0 {
-		db = db.Where("product_id = ?", inventory.ProductId)
+	db = db.Select("product_id, sum(amount) as amount, max(add_time) as add_time")
+	db = db.Group("product_id")
+	db.Preload("Product")
+
+	if len(inventory.ProductIdList) != 0 {
+		slice := strings.Split(inventory.ProductIdList, ";")
+		db = db.Where("product_id in ?", slice)
 	}
 
-	db = db.Preload("Product")
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
 
-	return Pagination(db, []models.ProductInventory{}, pn, pSize)
+	if pn != 0 && pSize != 0 {
+		offset := (pn - 1) * pSize
+		db = db.Order("add_time desc").Limit(pSize).Offset(offset)
+	}
+
+	var data []models.ProductInventory
+	err := db.Find(&data).Error
+
+	return map[string]interface{}{
+		"data":       data,
+		"pageNo":     pn,
+		"pageSize":   pSize,
+		"totalCount": total,
+	}, err
 }
 
 // GetProductInventoryById 根据ID获取产品库存
@@ -82,7 +101,7 @@ func SaveProductInventory(data *models.ProductInventory) error {
 
 	fmt.Println(product.ProductContent)
 	fmt.Println(data.InventoryContent)
-	err = db.Model(&models.ProductInventory{}).Create(data).Error
+	err = tx.Model(&models.ProductInventory{}).Create(data).Error
 	if err != nil {
 		return err
 	}
@@ -118,13 +137,13 @@ func UpdateProductInventory(inventory *models.ProductInventory) error {
 	}()
 
 	amount := inventory.Amount
-	var data *models.ProductInventory
 	for {
 		if amount <= 0 {
 			break
 		}
 
-		err = db.Model(&models.ProductInventory{}).
+		var data *models.ProductInventory
+		err = tx.Model(&models.ProductInventory{}).
 			Preload("Product").
 			Preload("InventoryContent").
 			Where("product_id = ?", inventory.ProductId).
@@ -137,19 +156,29 @@ func UpdateProductInventory(inventory *models.ProductInventory) error {
 		}
 
 		data.Operator = inventory.Operator
-		err = ReturningInventory(db, data, amount)
+		err = ReturningInventory(tx, data, amount)
+		if err != nil {
+			return err
+		}
 
 		if data.Amount > amount {
 			data.Amount -= amount
 			amount = 0
-			err = db.Select("amount").Updates(&data).Error
+			err = tx.Select("amount").Updates(&data).Error
 			if err != nil {
 				return err
 			}
 		} else {
 			// 删除库存
 			amount -= data.Amount
-			err = db.Delete(&data).Error
+			err = tx.Model(&models.InventoryContent{}).
+				Where("inventory_id = ?", data.ID).
+				Delete(&models.InventoryContent{}).Error
+			if err != nil {
+				return err
+			}
+
+			err = tx.Delete(&data).Error
 			if err != nil {
 				return err
 			}
