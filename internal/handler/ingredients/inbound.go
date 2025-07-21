@@ -18,6 +18,7 @@ func InitInBoundRouter(router *gin.RouterGroup) {
 
 	inBoundRouter.GET("list", ib.list)
 	inBoundRouter.GET("outList", ib.outList)
+	inBoundRouter.GET("ingredientSum", ib.ingredientSum)
 	inBoundRouter.GET("chart", ib.chart)
 	inBoundRouter.GET("export", ib.export)
 	inBoundRouter.GET("exportOut", ib.exportOut)
@@ -35,9 +36,10 @@ func (*InBound) list(c *gin.Context) {
 	stockUnit := c.DefaultQuery("stockUnit", "")
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
+	isPackage := utils.DefaultQueryInt(c, "isPackage", 0)
 
 	data, err := service.GetInBoundList(name, stockUnit, supplier,
-		begTime, endTime, pn, pSize)
+		begTime, endTime, pn, pSize, isPackage)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -171,8 +173,25 @@ func (*InBound) outList(c *gin.Context) {
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 	inOrOut := utils.DefaultQueryInt(c, "inOrOut", 0)
+	isPackage := utils.DefaultQueryInt(c, "isPackage", 0)
 
-	data, err := service.GetConsumeList(ids, stockUnit, begTime, endTime, inOrOut, pn, pSize)
+	data, err := service.GetConsumeList(ids, stockUnit, begTime, endTime, inOrOut, pn, pSize, isPackage)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+func (*InBound) ingredientSum(c *gin.Context) {
+	ids := c.DefaultQuery("ids", "")
+	stockUnit := c.DefaultQuery("stockUnit", "")
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+	inOrOut := utils.DefaultQueryInt(c, "inOrOut", 0)
+
+	data, err := service.GetIngredientSum(ids, stockUnit, begTime, endTime, inOrOut)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

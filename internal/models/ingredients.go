@@ -24,16 +24,18 @@ type IngredientInBound struct {
 	StockUnit      int          `gorm:"type:int(2)" json:"stockUnit"`
 	StockUser      string       `gorm:"type:varchar(256)" json:"stockUser"`
 	StockTime      time.Time    `gorm:"type:Time" json:"stockTime"`
+	IsPackage      int          `gorm:"type:int(11);default:0" json:"isPackage"`
 }
 
 type IngredientStock struct {
 	BaseModel
-	IngredientId *int               `gorm:"type:int(11)" json:"ingredientId"`
-	Ingredient   *Ingredients       `gorm:"foreignKey:IngredientId" json:"ingredient"`
-	InBoundId    *int               `gorm:"type:int(11)" json:"inBoundId"`
-	InBound      *IngredientInBound `gorm:"foreignKey:InBoundId" json:"inBound"`
-	StockNum     float64            `gorm:"type:decimal(16,4)" json:"stockNum"`
-	StockUnit    int                `gorm:"type:int(2)" json:"stockUnit"`
+	IngredientId *int         `gorm:"type:int(11)" json:"ingredientId"`
+	Ingredient   *Ingredients `gorm:"foreignKey:IngredientId" json:"ingredient"`
+	StockNum     float64      `gorm:"type:decimal(16,4)" json:"stockNum"`
+	StockUnit    int          `gorm:"type:int(2)" json:"stockUnit"`
+	IsPackage    int          `gorm:"type:int(11);default:0" json:"isPackage"`
+
+	InBoundId *int `gorm:"-" json:"inBoundId"`
 }
 
 type IngredientConsume struct {
@@ -49,8 +51,9 @@ type IngredientConsume struct {
 	OrderId          *int                `gorm:"type:int(11)" json:"OrderId"` // 订单ID
 	StockNum         float64             `gorm:"type:decimal(16,4)" json:"stockNum"`
 	StockUnit        int                 `gorm:"type:int(2)" json:"stockUnit"`
-	OperationType    bool                `gorm:"type:bool" json:"operationType"` // true表示启用，false表示禁用
+	OperationType    *bool               `gorm:"type:bool" json:"operationType"` // true表示启用，false表示禁用
 	OperationDetails string              `gorm:"type:varchar(256)" json:"operationDetails"`
+	IsPackage        int                 `gorm:"type:int(11);default:0" json:"isPackage"`
 
 	// 返回参数
 	Cost float64 `gorm:"-" json:"cost"`

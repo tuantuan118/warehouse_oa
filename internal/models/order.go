@@ -24,17 +24,19 @@ type Order struct {
 
 type OrderProduct struct {
 	BaseModel
-	OrderId       int             `gorm:"index" json:"orderId"`
-	ProductId     int             `gorm:"type:int(11)" json:"productId"`
-	ProductName   string          `gorm:"type:varchar(256);not null" json:"productName"`
-	Specification string          `gorm:"type:varchar(256)" json:"specification"`
-	Price         float64         `gorm:"type:decimal(10,2)" json:"price"`
-	Amount        int             `gorm:"type:int(11);not null" json:"amount"`
-	Images        string          `gorm:"type:text" json:"images"`                       // 图片列表
-	UserList      []User          `gorm:"many2many:order_product_user;" json:"userList"` // 订单分配
-	Ingredient    []AddIngredient `gorm:"foreignKey:OrderProductId;references:ID" json:"ingredient"`
-	UseFinished   []UseFinished   `gorm:"foreignKey:OrderProductId;references:ID" json:"useFinished"` // 订单成品
-	Status        bool            `gorm:"type:bool;default:false" json:"status"`
+	OrderId         int             `gorm:"index" json:"orderId"`
+	ProductId       int             `gorm:"type:int(11)" json:"productId"`
+	ProductName     string          `gorm:"type:varchar(256);not null" json:"productName"`
+	ProductNameDesc string          `gorm:"type:varchar(256);not null" json:"productNameDesc"`
+	Specification   string          `gorm:"type:varchar(256)" json:"specification"`
+	Price           float64         `gorm:"type:decimal(10,2)" json:"price"`
+	Amount          int             `gorm:"type:int(11);not null" json:"amount"`
+	Images          string          `gorm:"type:text" json:"images"`                       // 图片列表
+	UserList        []User          `gorm:"many2many:order_product_user;" json:"userList"` // 订单分配
+	Ingredient      []AddIngredient `gorm:"foreignKey:OrderProductId;references:ID" json:"ingredient"`
+	UseFinished     []UseFinished   `gorm:"foreignKey:OrderProductId;references:ID" json:"useFinished"` // 订单成品
+	Status          bool            `gorm:"type:bool;default:false" json:"status"`
+	Logistics       string          `gorm:"type:varchar(256);" json:"logistics"`
 
 	// 请求参数
 	ImageList []string `gorm:"-" json:"imageList"`

@@ -10,9 +10,10 @@ import (
 )
 
 // GetStockList 获取库存列表
-func GetStockList(name string, pn, pSize int) (interface{}, error) {
+func GetStockList(name string, pn, pSize, isPackage int) (interface{}, error) {
 	db := global.Db.Model(&models.IngredientStock{})
 	db = db.Select("ingredient_id, stock_unit, sum(stock_num) as stock_num, max(add_time) as add_time")
+	db = db.Where("is_package = ?", isPackage)
 	db = db.Group("ingredient_id, stock_unit")
 
 	if name != "" {
@@ -108,15 +109,29 @@ func SaveStockByInBound(db *gorm.DB, inBound *models.IngredientInBound) error {
 		return errors.New("配料单位错误")
 	}
 
-	_, err := SaveStock(db, &models.IngredientStock{
-		BaseModel: models.BaseModel{
-			Operator: inBound.Operator,
-		},
-		IngredientId: inBound.IngredientId,
-		InBoundId:    &inBound.ID,
-		StockNum:     inBound.StockNum,
-		StockUnit:    inBound.StockUnit,
-	})
+	Stock := new(models.IngredientStock)
+	err := db.Model(&models.IngredientStock{}).
+		Where("ingredient_id = ? and stock_unit = ?", *inBound.IngredientId, inBound.StockUnit).
+		Find(&Stock).Error
+	if err != nil {
+		return err
+	}
+
+	if Stock.ID != 0 {
+		Stock.StockNum += inBound.StockNum
+		err = db.Save(&Stock).Error
+
+	} else {
+		_, err = SaveStock(db, &models.IngredientStock{
+			BaseModel: models.BaseModel{
+				Operator: inBound.Operator,
+			},
+			IngredientId: inBound.IngredientId,
+			StockNum:     inBound.StockNum,
+			StockUnit:    inBound.StockUnit,
+			IsPackage:    inBound.IsPackage,
+		})
+	}
 
 	return err
 }
@@ -161,81 +176,6 @@ func UpdateStockByInBound(db *gorm.DB, oldInBound *models.IngredientInBound) err
 	return global.Db.Select("stock_num").Updates(&data).Error
 }
 
-// DeductStock 扣除库存, 并且新增消耗表
-func DeductStock(db *gorm.DB, production *models.FinishedProduction,
-	ingredientStock *models.IngredientStock) error {
-
-	var err error
-	for {
-		if ingredientStock.StockNum == 0 {
-			break
-		}
-
-		stock := &models.IngredientStock{}
-		err = db.Model(&models.IngredientStock{}).
-			Where("ingredient_id = ?", *ingredientStock.IngredientId).
-			Where("stock_unit = ?", ingredientStock.StockUnit).
-			Where("stock_num > ?", 0).
-			Order("add_time asc").First(&stock).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(fmt.Sprintf("id: %d 配料库存不足", *ingredientStock.IngredientId))
-		}
-		if err != nil {
-			return err
-		}
-
-		logrus.Infoln(stock.StockNum)
-		logrus.Infoln(ingredientStock.StockNum)
-
-		if stock.StockNum > ingredientStock.StockNum {
-			// 更新库存
-			_, err = SaveConsume(db, &models.IngredientConsume{
-				BaseModel: models.BaseModel{
-					Operator: production.Operator,
-				},
-				FinishedId:       &production.FinishedId,
-				IngredientId:     stock.IngredientId,
-				ProductionId:     &production.ID,
-				InBoundId:        stock.InBoundId,
-				StockNum:         0 - ingredientStock.StockNum,
-				StockUnit:        ingredientStock.StockUnit,
-				OperationType:    false,
-				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
-			})
-
-			stock.StockNum -= ingredientStock.StockNum
-			err = db.Select("stock_num").Updates(&stock).Error
-			if err != nil {
-				return err
-			}
-			ingredientStock.StockNum = 0
-		} else {
-			_, err = SaveConsume(db, &models.IngredientConsume{
-				BaseModel: models.BaseModel{
-					Operator: production.Operator,
-				},
-				FinishedId:       &production.FinishedId,
-				IngredientId:     stock.IngredientId,
-				ProductionId:     &production.ID,
-				InBoundId:        stock.InBoundId,
-				StockNum:         0 - stock.StockNum,
-				StockUnit:        ingredientStock.StockUnit,
-				OperationType:    false,
-				OperationDetails: fmt.Sprintf("报工生产【%s】", production.Finished.Name),
-			})
-
-			ingredientStock.StockNum -= stock.StockNum
-
-			// 删除库存
-			err = db.Delete(&stock).Error
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return err
-}
-
 // DeductOrderAttach 扣除订单附加材料
 func DeductOrderAttach(db *gorm.DB, order *models.Order,
 	ingredientStock *models.IngredientStock) error {
@@ -262,8 +202,9 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 		logrus.Infoln(stock.StockNum)
 		logrus.Infoln(ingredientStock.StockNum)
 
-		if stock.StockNum > ingredientStock.StockNum {
+		if stock.StockNum >= ingredientStock.StockNum {
 			// 更新库存
+			falseValue := false
 			_, err = SaveConsume(db, &models.IngredientConsume{
 				BaseModel: models.BaseModel{
 					Operator: order.Operator,
@@ -273,8 +214,9 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 				OrderId:          &order.ID,
 				StockNum:         0 - ingredientStock.StockNum,
 				StockUnit:        ingredientStock.StockUnit,
-				OperationType:    false,
+				OperationType:    &falseValue,
 				OperationDetails: fmt.Sprintf("订单【%s】附加材料", order.OrderNumber),
+				IsPackage:        ingredientStock.IsPackage,
 			})
 
 			stock.StockNum -= ingredientStock.StockNum
@@ -284,26 +226,7 @@ func DeductOrderAttach(db *gorm.DB, order *models.Order,
 			}
 			ingredientStock.StockNum = 0
 		} else {
-			_, err = SaveConsume(db, &models.IngredientConsume{
-				BaseModel: models.BaseModel{
-					Operator: order.Operator,
-				},
-				IngredientId:     stock.IngredientId,
-				InBoundId:        stock.InBoundId,
-				OrderId:          &order.ID,
-				StockNum:         0 - stock.StockNum,
-				StockUnit:        ingredientStock.StockUnit,
-				OperationType:    false,
-				OperationDetails: fmt.Sprintf("订单【%s】附加材料", order.OrderNumber),
-			})
-
-			ingredientStock.StockNum -= stock.StockNum
-
-			// 删除库存
-			err = db.Delete(&stock).Error
-			if err != nil {
-				return err
-			}
+			return errors.New(fmt.Sprintf("id: %d 附加材料库存不足", *ingredientStock.IngredientId))
 		}
 	}
 	return err

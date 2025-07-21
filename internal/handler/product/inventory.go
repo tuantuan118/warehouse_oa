@@ -16,6 +16,9 @@ func InitInventoryRouter(router *gin.RouterGroup) {
 	inventoryRouter := router.Group("inventory")
 
 	inventoryRouter.GET("list", i.list)
+	inventoryRouter.GET("outList", i.outList)
+	inventoryRouter.GET("inventorySum", i.inventorySum)
+	inventoryRouter.GET("getAmount", i.getAmount)
 	inventoryRouter.POST("add", i.add)
 	inventoryRouter.POST("update", i.update)
 }
@@ -26,9 +29,54 @@ func (*Inventory) list(c *gin.Context) {
 		BaseModel: models.BaseModel{
 			ID: utils.DefaultQueryInt(c, "id", 0),
 		},
-		ProductId: utils.DefaultQueryInt(c, "productId", 0),
+		ProductId:     utils.DefaultQueryInt(c, "productId", 0),
+		ProductIdList: c.DefaultQuery("productIdList", ""),
 	}
 	data, err := service.GetProductInventoryList(inventory, pn, pSize)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+func (*Inventory) outList(c *gin.Context) {
+	pn, pSize := utils.ParsePaginationParams(c)
+	ids := c.DefaultQuery("ids", "")
+	stockUnit := c.DefaultQuery("stockUnit", "")
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+	inOrOut := utils.DefaultQueryInt(c, "inOrOut", 0)
+
+	data, err := service.GetProductConsumeOutList(ids, stockUnit, begTime, endTime, inOrOut, pn, pSize)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+func (*Inventory) inventorySum(c *gin.Context) {
+	ids := c.DefaultQuery("ids", "")
+	stockUnit := c.DefaultQuery("stockUnit", "")
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+	inOrOut := utils.DefaultQueryInt(c, "inOrOut", 0)
+
+	data, err := service.GetInventorySum(ids, stockUnit, begTime, endTime, inOrOut)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+func (*Inventory) getAmount(c *gin.Context) {
+	id := utils.DefaultQueryInt(c, "id", 0)
+	data, err := service.GetProductInventorAmount(id)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

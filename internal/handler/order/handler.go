@@ -41,8 +41,9 @@ func (*Order) list(c *gin.Context) {
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 	userId := c.GetInt("userId")
+	sorting := utils.DefaultQueryInt(c, "sorting", 0)
 
-	data, err := service.GetOrderList(order, ids, customerStr, begTime, endTime, pn, pSize, userId)
+	data, err := service.GetOrderList(order, ids, customerStr, begTime, endTime, pn, pSize, userId, sorting)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -205,10 +206,12 @@ func (*Order) exportExecl(c *gin.Context) {
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
 	costStatus := utils.DefaultQueryInt(c, "costStatus", 0)
+	sorting := utils.DefaultQueryInt(c, "sorting", 0)
 
 	userId := c.GetInt("userId")
 
-	data, err := service.ExportOrderExecl(order, ids, customerStr, begTime, endTime, pn, pSize, costStatus, userId)
+	data, err := service.ExportOrderExecl(order, ids, customerStr, begTime, endTime,
+		pn, pSize, costStatus, userId, sorting)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

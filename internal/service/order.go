@@ -16,7 +16,7 @@ import (
 	"warehouse_oa/utils"
 )
 
-func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string, pn, pSize int, userId int) (
+func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string, pn, pSize, userId, sorting int) (
 	interface{}, error) {
 
 	db := global.Db.Model(&models.Order{})
@@ -42,8 +42,8 @@ func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string
 		totalDb = totalDb.Where("status = ?", order.Status)
 	}
 	if begTime != "" && endTime != "" {
-		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
-		totalDb = totalDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		db = db.Where("DATE_FORMAT(sale_date, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		totalDb = totalDb.Where("DATE_FORMAT(sale_date, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 	db = db.Preload("Customer")
 	db = db.Preload("OrderProduct.UserList")
@@ -81,15 +81,53 @@ func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string
 		return nil, err
 	}
 
+	var sortingStr string
+	switch sorting {
+	case 0:
+		sortingStr = "id desc"
+	case 1:
+		sortingStr = "id asc"
+	case 2:
+		sortingStr = "order_number desc"
+	case 3:
+		sortingStr = "order_number asc"
+	case 4:
+		sortingStr = "customer_id desc"
+	case 5:
+		sortingStr = "customer_id asc"
+	case 6:
+		sortingStr = "status desc"
+	case 7:
+		sortingStr = "status asc"
+	case 8:
+		sortingStr = "sale_date desc"
+	case 9:
+		sortingStr = "sale_date asc"
+	}
+
 	if pn != 0 && pSize != 0 {
 		offset := (pn - 1) * pSize
-		db = db.Order("id desc").Limit(pSize).Offset(offset)
+		db = db.Order(sortingStr).Limit(pSize).Offset(offset)
 	}
 
 	data := make([]models.Order, 0)
 	err = db.Find(&data).Error
-
 	logrus.Infoln("len(data)", len(data))
+
+	if !b {
+		for v, _ := range data {
+			op := make([]*models.OrderProduct, 0)
+			for _, o := range data[v].OrderProduct {
+				oc := o
+				for _, u := range o.UserList {
+					if userId == u.ID {
+						op = append(op, oc)
+					}
+				}
+			}
+			data[v].OrderProduct = op
+		}
+	}
 
 	return map[string]interface{}{
 		"data":             data,
@@ -196,12 +234,16 @@ func SaveOrder(order *models.Order) (*models.Order, error) {
 
 	var totalPrice float64
 	for _, orderProduct := range order.OrderProduct {
-		if orderProduct.UserList != nil || len(orderProduct.UserList) > 0 {
-			for _, v := range orderProduct.UserList {
-				_, err = GetUserById(v.ID)
-				if err != nil {
-					return nil, err
-				}
+		if orderProduct.UserList == nil {
+			return nil, errors.New("包装分配不能为空")
+		}
+		if len(orderProduct.UserList) == 0 {
+			return nil, errors.New("包装分配不能为空")
+		}
+		for _, v := range orderProduct.UserList {
+			_, err = GetUserById(v.ID)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -311,25 +353,42 @@ func OutOfStock(orderId, orderProductId, userId int, username string) error {
 			tx.Commit()
 		}
 	}()
-
-	// 消耗产品库存
-	surplusNum, err := DeductProductStock(tx, op.ProductName, op.Specification, op.Amount)
+	
+	surplusNum, err := DeductProductStock(tx, op.ProductId, op.Amount)
 	if err != nil {
 		return err
 	}
 	logrus.Infoln("111111111111111111111111111111111111")
 	logrus.Infoln(surplusNum)
 
+	trueValue := true
+	err = tx.Model(&models.ProductConsume{}).Create(&models.ProductConsume{
+		BaseModel: models.BaseModel{
+			Operator: username,
+		},
+		OrderId:          &order.ID,
+		ProductId:        op.ProductId,
+		StockNum:         0 - float64(op.Amount) + float64(surplusNum),
+		OperationType:    &trueValue,
+		OperationDetails: fmt.Sprintf("订单【%s】出库", order.OrderNumber),
+	}).Error
+	if err != nil {
+		return err
+	}
+
 	// 消耗成品
-	for _, u := range op.UseFinished {
-		err = DeductFinishedStock(tx, order, &models.FinishedStock{
-			FinishedId: u.FinishedId,
-			Amount:     u.Quantity * float64(surplusNum),
-		})
-		if err != nil {
-			return err
+	if surplusNum > 0 {
+		for _, u := range op.UseFinished {
+			err = DeductFinishedStock(tx, order, &models.FinishedStock{
+				FinishedId: u.FinishedId,
+				Amount:     u.Quantity * float64(surplusNum),
+			})
+			if err != nil {
+				return err
+			}
 		}
 	}
+
 	// 消耗附加材料
 	for _, ingredient := range op.Ingredient {
 		err = DeductOrderAttach(tx, order,
@@ -337,6 +396,7 @@ func OutOfStock(orderId, orderProductId, userId int, username string) error {
 				IngredientId: ingredient.IngredientId,
 				StockNum:     ingredient.Quantity * float64(op.Amount),
 				StockUnit:    ingredient.StockUnit,
+				IsPackage:    1,
 			})
 		if err != nil {
 			return err
@@ -519,6 +579,13 @@ func ExportOrder(order *models.Order) ([]byte, error) {
 		return nil, err
 	}
 
+	if order.Remark != "" {
+		B13 := fmt.Sprintf("备注: %s", order.Remark)
+		if err := f.SetCellValue("Sheet1", fmt.Sprintf("B%d", 12+i), B13); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := f.SetCellValue("Sheet1", fmt.Sprintf("D%d", 12+i), "总数量："); err != nil {
 		return nil, err
 	}
@@ -634,10 +701,10 @@ func GetOrderByCustomer(customerId int) error {
 }
 
 func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime string, pn, pSize int,
-	costStatus, userId int) (
+	costStatus, userId, sorting int) (
 	*excelize.File, error) {
 
-	i, err := GetOrderList(order, ids, customerStr, begTime, endTime, pn, pSize, userId)
+	i, err := GetOrderList(order, ids, customerStr, begTime, endTime, pn, pSize, userId, sorting)
 	if err != nil {
 		return nil, err
 	}
@@ -660,25 +727,25 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 	)
 
 	keyList := []string{
-		"订单编号",    //"订单编号"
-		"客户名称",    //"客户名称"
-		"产品名称",    //"产品名称"
-		"产品规格",    //"产品规格"
-		"单价（元）",   //"单价（元）"
-		"数量",      //"数量"
+		"订单编号",     //"订单编号"
+		"客户名称",     //"客户名称"
+		"产品名称",     //"产品名称"
+		"产品规格",     //"产品规格"
+		"单价（元）",     //"单价（元）"
+		"数量",         //"数量"
 		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",   //"成本（元）"
-		"利润（元）",   //"利润（元）"
-		"毛利率",     //"毛利率"
+		"成本（元）",     //"成本（元）"
+		"利润（元）",     //"利润（元）"
+		"毛利率",       //"毛利率"
 		"订单总额（元）", //"订单总额（元）"
 		"已结金额（元）", //"已结金额（元）"
 		"未结金额（元）", //"未结金额（元）"
-		"销售日期",    //"销售日期"
-		"订单状态",    //"订单状态"
-		"销售人员",    //"销售人员"
-		"备注",      //"备注"
-		"更新人员",    //"更新人员"
-		"更新时间",    //"更新时间"
+		"销售日期",     //"销售日期"
+		"订单状态",     //"订单状态"
+		"销售人员",     //"销售人员"
+		"备注",         //"备注"
+		"更新人员",     //"更新人员"
+		"更新时间",     //"更新时间"
 	}
 
 	var row int = 1 // 行数

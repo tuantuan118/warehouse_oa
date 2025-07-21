@@ -21,8 +21,9 @@ func InitStockRouter(router *gin.RouterGroup) {
 func (*Stock) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
 	name := c.DefaultQuery("name", "")
+	isPackage := utils.DefaultQueryInt(c, "isPackage", 0)
 
-	data, err := service.GetStockList(name, pn, pSize)
+	data, err := service.GetStockList(name, pn, pSize, isPackage)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

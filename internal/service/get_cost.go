@@ -38,31 +38,33 @@ func GetCostByProduction(id int) (float64, error) {
 
 // GetCostByOrder 订单成本接口成本查询 （根据订单ID查询）订单ID - ProductionId - InBoundId - UnitPrice
 func GetCostByOrder(order *models.Order) (float64, error) {
-	var consume []*models.FinishedConsume
-	err := global.Db.Model(&models.FinishedConsume{}).
-		Where("order_id = ?", order.ID).Find(&consume).Error
+	//var consume []*models.FinishedConsume
+	//err := global.Db.Model(&models.FinishedConsume{}).
+	//	Where("order_id = ?", order.ID).Find(&consume).Error
+	//
+	//var cost float64
+	//for _, c := range consume {
+	//	production, err := GetProductionById(c.ProductionId)
+	//	if err != nil {
+	//		return 0, err
+	//	}
+	//	unitPrice := production.Cost / float64(production.ActualAmount)
+	//	cost += unitPrice * c.StockNum
+	//}
+	//logrus.Infoln("GetCostByOrder-cost", cost)
+	//cost = -(cost)
+	//ingredientCost, err := GetCostByOrderIngredient(order.ID)
+	//if err != nil {
+	//	return 0, err
+	//}
+	//
+	//logrus.Infoln("GetCostByOrder-cost", cost)
+	//logrus.Infoln("GetCostByOrder-ingredientCost", ingredientCost)
+	//
+	//cost = cost + -ingredientCost
+	//return cost, err
 
-	var cost float64
-	for _, c := range consume {
-		production, err := GetProductionById(c.ProductionId)
-		if err != nil {
-			return 0, err
-		}
-		unitPrice := production.Cost / float64(production.ActualAmount)
-		cost += unitPrice * c.StockNum
-	}
-	logrus.Infoln("GetCostByOrder-cost", cost)
-	cost = -(cost)
-	ingredientCost, err := GetCostByOrderIngredient(order.ID)
-	if err != nil {
-		return 0, err
-	}
-
-	logrus.Infoln("GetCostByOrder-cost", cost)
-	logrus.Infoln("GetCostByOrder-ingredientCost", ingredientCost)
-
-	cost = cost + -ingredientCost
-	return cost, err
+	return 0, nil
 }
 
 // GetCostByOrderIngredient 订单附加材料成本查询 （根据订单ID查询）订单ID - InBoundId

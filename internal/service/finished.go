@@ -71,6 +71,14 @@ func SaveFinished(finished *models.Finished) (*models.Finished, error) {
 		return nil, err
 	}
 
+	err = global.Db.Model(&models.FinishedStock{}).Create(&models.FinishedStock{
+		BaseModel: models.BaseModel{
+			Operator: finished.Operator,
+		},
+		FinishedId: finished.ID,
+		Amount:     0,
+	}).Error
+
 	return finished, err
 }
 

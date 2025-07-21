@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"time"
@@ -12,7 +11,7 @@ import (
 
 // GetProductionList 查询成品报工
 func GetProductionList(production *models.FinishedProduction,
-	begTime, endTime string, pn, pSize int) (interface{}, error) {
+	begTime, endTime string, pn, pSize, userId int) (interface{}, error) {
 
 	db := global.Db.Model(&models.FinishedProduction{})
 	db.Preload("Finished")
@@ -27,6 +26,15 @@ func GetProductionList(production *models.FinishedProduction,
 		db = db.Where("DATE_FORMAT(finish_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
+	b, err := getAdmin(userId)
+	if err != nil {
+		return nil, err
+	}
+	if !b {
+		db = db.Where("(finish_time >= DATEADD(DAY, -6, CAST(GETDATE() AS DATE)) " +
+			"AND finish_time < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))) or (status = 4)")
+	}
+
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
 		return nil, err
@@ -38,7 +46,7 @@ func GetProductionList(production *models.FinishedProduction,
 	}
 
 	var data []*models.FinishedProduction
-	err := db.Find(&data).Error
+	err = db.Find(&data).Error
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +65,40 @@ func GetProductionList(production *models.FinishedProduction,
 		"pageSize":   pSize,
 		"totalCount": total,
 	}, err
+}
+
+func GetFinishedSum(id, status int, begTime, endTime string) (interface{}, error) {
+	enterDb := global.Db.Model(&models.FinishedConsume{})
+	outDb := global.Db.Model(&models.FinishedConsume{})
+	enterDb = enterDb.Where("finished_id = ?", id)
+	outDb = outDb.Where("finished_id = ?", id)
+
+	if begTime != "" && endTime != "" {
+		enterDb = enterDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		outDb = outDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+
+	var enterNum, outNum float64
+	err := enterDb.Where("stock_num >= 0").Select("IFNULL(SUM(stock_num), 0) AS stock_num").First(&enterNum).Error
+	if err != nil {
+		return nil, err
+	}
+	err = outDb.Where("stock_num <= 0").Select("IFNULL(SUM(stock_num), 0) AS stock_num").First(&outNum).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if status == 1 {
+		outNum = 0
+	}
+	if status == 2 {
+		enterNum = 0
+	}
+
+	return map[string]float64{
+		"enter": enterNum,
+		"out":   outNum,
+	}, nil
 }
 
 func GetFinishedConsumeList(production *models.FinishedProduction,
@@ -197,31 +239,31 @@ func VoidProduction(id int, username string) error {
 		}
 	}()
 
-	// 返还配料库存
-	consumeList, err := GetConsumeByProduction(production.ID)
-	if err != nil {
-		return err
-	}
-	for _, consume := range consumeList {
-		// 添加配料库存
-		inBound := &models.IngredientInBound{
-			BaseModel: models.BaseModel{
-				ID:       *consume.InBoundId,
-				Operator: username,
-			},
-			IngredientId: consume.IngredientId,
-			StockUnit:    consume.StockUnit,
-			StockNum:     -consume.StockNum,
-		}
-		err = SaveStockByInBound(tx, inBound)
-		if err != nil {
-			return err
-		}
-
-		// 添加配料消耗表
-		err = SaveConsumeByInBound(tx, inBound,
-			fmt.Sprintf("报工生产【%s】作废重新入库", production.Finished.Name))
-	}
+	//// 返还配料库存
+	//consumeList, err := GetConsumeByProduction(production.ID)
+	//if err != nil {
+	//	return err
+	//}
+	//for _, consume := range consumeList {
+	//	// 添加配料库存
+	//	inBound := &models.IngredientInBound{
+	//		BaseModel: models.BaseModel{
+	//			ID:       *consume.InBoundId,
+	//			Operator: username,
+	//		},
+	//		IngredientId: consume.IngredientId,
+	//		StockUnit:    consume.StockUnit,
+	//		StockNum:     -consume.StockNum,
+	//	}
+	//	err = SaveStockByInBound(tx, inBound)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	// 添加配料消耗表
+	//	err = SaveConsumeByInBound(tx, inBound,
+	//		fmt.Sprintf("报工生产【%s】作废重新入库", production.Finished.Name))
+	//}
 
 	production.Operator = username
 	production.Status = 3

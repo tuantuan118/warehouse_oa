@@ -15,10 +15,13 @@ import (
 
 // GetConsumeList 返回出入库列表查询数据
 func GetConsumeList(ids, stockUnit, begTime, endTime string,
-	inOrOut, pn, pSize int) (interface{}, error) {
+	inOrOut, pn, pSize, isPackage int) (interface{}, error) {
 
 	db := global.Db.Model(&models.IngredientConsume{})
 	totalDb := global.Db.Model(&models.IngredientConsume{})
+
+	db = db.Where("is_package = ?", isPackage)
+	totalDb = db.Where("is_package = ?", isPackage)
 
 	if ids != "" {
 		idList := strings.Split(ids, ";")
@@ -83,6 +86,50 @@ func GetConsumeList(ids, stockUnit, begTime, endTime string,
 	}, err
 }
 
+// GetIngredientSum 返回出入库列表查询数据
+func GetIngredientSum(ids, stockUnit, begTime, endTime string,
+	inOrOut int) (interface{}, error) {
+
+	enterDb := global.Db.Model(&models.IngredientConsume{})
+	outDb := global.Db.Model(&models.IngredientConsume{})
+
+	if ids != "" {
+		idList := strings.Split(ids, ";")
+		enterDb = enterDb.Where("ingredient_id in ?", idList)
+		outDb = outDb.Where("ingredient_id in ?", idList)
+	}
+	if stockUnit != "" {
+		enterDb = enterDb.Where("stock_unit = ?", stockUnit)
+		outDb = outDb.Where("stock_unit = ?", stockUnit)
+	}
+	if begTime != "" && endTime != "" {
+		enterDb = enterDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		outDb = outDb.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+	}
+
+	var enterNum, outNum float64
+	err := enterDb.Where("stock_num >= 0").Select("IFNULL(SUM(stock_num), 0) AS stock_num").First(&enterNum).Error
+	if err != nil {
+		return nil, err
+	}
+	err = outDb.Where("stock_num <= 0").Select("IFNULL(SUM(stock_num), 0) AS stock_num").First(&outNum).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if inOrOut == 1 {
+		outNum = 0
+	}
+	if inOrOut == 2 {
+		enterNum = 0
+	}
+
+	return map[string]float64{
+		"enter": enterNum,
+		"out":   outNum,
+	}, nil
+}
+
 // GetConsumeChart 返回出入库列表图表
 func GetConsumeChart(ids, stockUnit, begTime, endTime string) ([]map[string]interface{}, error) {
 	db := global.Db.Model(&models.IngredientConsume{})
@@ -136,8 +183,9 @@ func SaveConsumeByInBound(db *gorm.DB, inBound *models.IngredientInBound, detail
 		InBoundId:        &inBound.ID,
 		StockNum:         inBound.StockNum,
 		StockUnit:        inBound.StockUnit,
-		OperationType:    b,
+		OperationType:    &b,
 		OperationDetails: details,
+		IsPackage:        inBound.IsPackage,
 	})
 
 	return err

@@ -75,6 +75,15 @@ func SaveProduct(product *models.Product) (*models.Product, error) {
 
 	err = global.Db.Model(&models.Product{}).Create(product).Error
 
+	err = global.Db.Model(&models.ProductInventory{}).Create(&models.ProductInventory{
+		BaseModel: models.BaseModel{
+			Operator: product.Operator,
+		},
+		ProductId:     product.ID,
+		Amount:        0,
+		ProductIdList: "",
+	}).Error
+
 	return product, err
 }
 

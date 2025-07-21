@@ -15,9 +15,12 @@ import (
 
 // GetInBoundList 返回入库列表查询数据
 func GetInBoundList(name, stockUnit, supplier, begTime, endTime string,
-	pn, pSize int) (interface{}, error) {
+	pn, pSize, isPackage int) (interface{}, error) {
 	db := global.Db.Model(&models.IngredientInBound{})
 	totalDb := global.Db.Model(&models.IngredientInBound{})
+
+	db = db.Where("is_package = ? ", isPackage)
+	totalDb = totalDb.Where("is_package = ? ", isPackage)
 
 	if name != "" {
 		idList, err := GetIngredientsByName(name)
@@ -64,7 +67,7 @@ func GetInBoundList(name, stockUnit, supplier, begTime, endTime string,
 
 	if pn != 0 && pSize != 0 {
 		offset := (pn - 1) * pSize
-		db = db.Order("stock_time desc").Limit(pSize).Offset(offset)
+		db = db.Order("stock_time, id desc").Limit(pSize).Offset(offset)
 	}
 
 	data := make([]models.IngredientInBound, 0)

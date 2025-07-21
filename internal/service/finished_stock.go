@@ -15,8 +15,6 @@ func GetFinishedStockList(ids string, begReportingTime, endReportingTime string,
 	pn, pSize int) (interface{}, error) {
 
 	db := global.Db.Model(&models.FinishedStock{})
-	db = db.Select("finished_id, sum(amount) as amount, max(add_time) as add_time")
-	db = db.Group("finished_id")
 	db.Preload("Finished")
 
 	if ids != "" {
@@ -67,14 +65,26 @@ func SaveStockByProduction(db *gorm.DB, production *models.FinishedProduction) e
 		return errors.New("成品ID错误")
 	}
 
-	_, err := SaveFinishedStock(db, &models.FinishedStock{
-		BaseModel: models.BaseModel{
-			Operator: production.Operator,
-		},
-		FinishedId:   production.FinishedId,
-		ProductionId: production.ID,
-		Amount:       float64(production.ActualAmount),
-	})
+	Stock := new(models.FinishedStock)
+	err := db.Model(&models.FinishedStock{}).
+		Where("finished_id = ?", production.FinishedId).
+		Find(&Stock).Error
+	if err != nil {
+		return err
+	}
+
+	if Stock.ID != 0 {
+		Stock.Amount += float64(production.ActualAmount)
+		err = db.Save(&Stock).Error
+	} else {
+		_, err = SaveFinishedStock(db, &models.FinishedStock{
+			BaseModel: models.BaseModel{
+				Operator: production.Operator,
+			},
+			FinishedId: production.FinishedId,
+			Amount:     float64(production.ActualAmount),
+		})
+	}
 
 	return err
 }
@@ -112,17 +122,17 @@ func DeductFinishedStock(db *gorm.DB, order *models.Order,
 			return err
 		}
 
-		if stock.Amount > finishedStock.Amount {
+		if stock.Amount >= finishedStock.Amount {
 			// 更新库存
+			falseValue := false
 			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
 				BaseModel: models.BaseModel{
 					Operator: order.Operator,
 				},
 				OrderId:          &order.ID,
 				FinishedId:       stock.FinishedId,
-				ProductionId:     stock.ProductionId,
 				StockNum:         0 - finishedStock.Amount,
-				OperationType:    false,
+				OperationType:    &falseValue,
 				OperationDetails: fmt.Sprintf("【%s】销售出库", order.OrderNumber),
 			})
 
@@ -134,25 +144,7 @@ func DeductFinishedStock(db *gorm.DB, order *models.Order,
 
 			finishedStock.Amount = 0
 		} else {
-			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
-				BaseModel: models.BaseModel{
-					Operator: order.Operator,
-				},
-				OrderId:          &order.ID,
-				FinishedId:       stock.FinishedId,
-				ProductionId:     stock.ProductionId,
-				StockNum:         0 - stock.Amount,
-				OperationType:    false,
-				OperationDetails: fmt.Sprintf("【%s】销售出库", order.OrderNumber),
-			})
-
-			finishedStock.Amount -= stock.Amount
-
-			// 删除库存
-			err = db.Delete(&stock).Error
-			if err != nil {
-				return err
-			}
+			return errors.New(fmt.Sprintf("id: %d 成品库存不足", finishedStock.FinishedId))
 		}
 	}
 	return err
@@ -180,17 +172,17 @@ func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
 			return err
 		}
 
-		if stock.Amount > finishedStock.Amount {
+		if stock.Amount >= finishedStock.Amount {
 			// 更新库存
+			falseValue := false
 			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
 				BaseModel: models.BaseModel{
 					Operator: product.Operator,
 				},
 				FinishedId:       stock.FinishedId,
-				ProductionId:     stock.ProductionId,
 				ProductId:        product.ID,
 				StockNum:         0 - finishedStock.Amount,
-				OperationType:    false,
+				OperationType:    &falseValue,
 				OperationDetails: fmt.Sprintf("产品【%s】使用", product.Name),
 			})
 			if err != nil {
@@ -205,28 +197,8 @@ func DeductFinishedStockByProduct(db *gorm.DB, product *models.Product,
 
 			finishedStock.Amount = 0
 		} else {
-			_, err = SaveFinishedConsume(db, &models.FinishedConsume{
-				BaseModel: models.BaseModel{
-					Operator: product.Operator,
-				},
-				FinishedId:       stock.FinishedId,
-				ProductionId:     stock.ProductionId,
-				ProductId:        product.ID,
-				StockNum:         0 - stock.Amount,
-				OperationType:    false,
-				OperationDetails: fmt.Sprintf("产品【%s】使用", product.Name),
-			})
-			if err != nil {
-				return err
-			}
+			return errors.New(fmt.Sprintf("id: %d 成品库存不足", finishedStock.FinishedId))
 
-			finishedStock.Amount -= stock.Amount
-
-			// 删除库存
-			err = db.Delete(&stock).Error
-			if err != nil {
-				return err
-			}
 		}
 	}
 	return err
@@ -263,29 +235,33 @@ func ReturningInventory(db *gorm.DB, data *models.ProductInventory, amount int) 
 				deductNum += fc.StockNum
 			}
 
+			falseValue := false
 			err = db.Model(&models.FinishedConsume{}).Create(&models.FinishedConsume{
 				BaseModel: models.BaseModel{
 					Operator: data.Operator,
 				},
 				FinishedId:       fc.FinishedId,
-				ProductionId:     fc.ProductionId,
 				StockNum:         numCopy,
-				OperationType:    false,
+				OperationType:    &falseValue,
 				OperationDetails: fmt.Sprintf("产品【%s】返还库存", data.Product.Name),
 			}).Error
 			if err != nil {
 				return err
 			}
-			err = db.Model(&models.FinishedStock{}).Create(&models.FinishedStock{
-				BaseModel: models.BaseModel{
-					Operator: data.Operator,
-				},
-				FinishedId:   fc.FinishedId,
-				ProductionId: fc.ProductionId,
-				Amount:       numCopy,
-			}).Error
+
+			stock := new(models.FinishedStock)
+			err = db.Model(&models.FinishedStock{}).
+				Where("finished_id = ?", fc.FinishedId).
+				Find(&stock).Error
 			if err != nil {
 				return err
+			}
+			if stock.ID != 0 {
+				stock.Amount += numCopy
+				err = db.Save(&stock).Error
+				break
+			} else {
+				return errors.New("成品不存在")
 			}
 		}
 	}

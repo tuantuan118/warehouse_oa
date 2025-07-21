@@ -81,6 +81,7 @@ func migration() {
 		&models.FinishedConsume{},
 		&models.ProductInventory{},
 		&models.InventoryContent{},
+		&models.ProductConsume{},
 	)
 	if err != nil {
 		logrus.Error("migration err: ", err.Error())

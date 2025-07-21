@@ -18,15 +18,15 @@ func SaveConsumeByProduction(db *gorm.DB, production *models.FinishedProduction)
 		return errors.New("成品数量错误")
 	}
 
+	trueValue := true
 	_, err := SaveFinishedConsume(db, &models.FinishedConsume{
 		BaseModel: models.BaseModel{
 			Operator: production.Operator,
 		},
 		OrderId:          nil,
 		FinishedId:       production.FinishedId,
-		ProductionId:     production.ID,
 		StockNum:         float64(production.ActualAmount),
-		OperationType:    true,
+		OperationType:    &trueValue,
 		OperationDetails: "生产完工",
 	})
 
@@ -44,11 +44,6 @@ func SaveFinishedConsume(db *gorm.DB, consume *models.FinishedConsume) (*models.
 	}
 
 	_, err = GetFinishedById(consume.FinishedId)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = GetProductionById(consume.ProductionId)
 	if err != nil {
 		return nil, err
 	}

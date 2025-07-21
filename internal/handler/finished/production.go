@@ -17,6 +17,7 @@ func InitProductionRouter(router *gin.RouterGroup) {
 
 	productionRouter.GET("list", p.list)
 	productionRouter.GET("outList", p.outList)
+	productionRouter.GET("finishedSum", p.finishedSum)
 	productionRouter.GET("chart", p.chart)
 	productionRouter.POST("add", p.add)
 	//productionRouter.POST("update", p.update)
@@ -33,9 +34,10 @@ func (*Production) list(c *gin.Context) {
 	}
 	begTime := c.DefaultQuery("begTime", "")
 	endTime := c.DefaultQuery("endTime", "")
+	userId := c.GetInt("userId")
 
 	data, err := service.GetProductionList(production,
-		begTime, endTime, pn, pSize)
+		begTime, endTime, pn, pSize, userId)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
@@ -133,6 +135,22 @@ func (*Production) outList(c *gin.Context) {
 	data, err := service.GetFinishedConsumeList(production,
 		begTime, endTime,
 		inOrOut, pn, pSize)
+	if err != nil {
+		handler.InternalServerError(c, err)
+		return
+	}
+
+	handler.Success(c, data)
+}
+
+// finishedSum 成品出入库汇总接口
+func (*Production) finishedSum(c *gin.Context) {
+	id := utils.DefaultQueryInt(c, "id", 0)
+	status := utils.DefaultQueryInt(c, "status", -1)
+	begTime := c.DefaultQuery("begTime", "")
+	endTime := c.DefaultQuery("endTime", "")
+
+	data, err := service.GetFinishedSum(id, status, begTime, endTime)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return
