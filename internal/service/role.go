@@ -4,14 +4,20 @@ import (
 	"errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"strings"
 	"warehouse_oa/internal/global"
 	"warehouse_oa/internal/models"
 )
 
-func GetRoleList(role *models.Role, pn, pSize int) (interface{}, error) {
+func GetRoleList(ids string, role *models.Role, pn, pSize int) (interface{}, error) {
 	db := global.Db.Model(&models.Role{})
 
 	db = db.Where("enabled = ?", role.Enabled)
+	db = db.Preload("Permissions")
+	if ids != "" {
+		slice := strings.Split(ids, ",")
+		db = db.Where("id in ?", slice)
+	}
 	if role.Name != "" {
 		db = db.Where("name = ?", role.Name)
 	}
@@ -105,7 +111,10 @@ func SetPermissions(id int, roleIds []int, operator string) error {
 		return err
 	}
 
-	role.Permissions = permissions
+	err = global.Db.Model(&role).Association("Permissions").Replace(permissions)
+	if err != nil {
+		return err
+	}
 	role.Operator = operator
 	return global.Db.Updates(&role).Error
 }
@@ -170,7 +179,9 @@ func GetPermissions(ids []int) (interface{}, error) {
 		} else {
 			// Otherwise, add it to its parent's Children slice
 			parent := itemMap[*item.ParentID]
-			parent.Children = append(parent.Children, item)
+			if parent != nil {
+				parent.Children = append(parent.Children, item)
+			}
 		}
 	}
 

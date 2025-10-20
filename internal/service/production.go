@@ -23,7 +23,7 @@ func GetProductionList(production *models.FinishedProduction,
 		db = db.Where("status = ?", production.Status)
 	}
 	if begTime != "" && endTime != "" {
-		db = db.Where("DATE_FORMAT(finish_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
+		db = db.Where("DATE_FORMAT(add_time, '%Y-%m-%d') BETWEEN ? AND ?", begTime, endTime)
 	}
 
 	b, err := getAdmin(userId)
@@ -31,8 +31,7 @@ func GetProductionList(production *models.FinishedProduction,
 		return nil, err
 	}
 	if !b {
-		db = db.Where("(finish_time >= DATEADD(DAY, -6, CAST(GETDATE() AS DATE)) " +
-			"AND finish_time < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))) or (status = 4)")
+		db = db.Where("(add_time >= NOW() - INTERVAL 7 DAY or status = 4")
 	}
 
 	var total int64

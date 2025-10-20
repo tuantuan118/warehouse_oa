@@ -25,12 +25,12 @@ func InitRoleRouter(router *gin.RouterGroup) {
 
 func (*Role) list(c *gin.Context) {
 	pn, pSize := utils.ParsePaginationParams(c)
+	ids := c.DefaultQuery("ids", "")
 	role := &models.Role{
-		BaseModel: models.BaseModel{},
-		Name:      c.DefaultQuery("name", ""),
-		Enabled:   utils.DefaultQueryBool(c, "enabled", true),
+		Name:    c.DefaultQuery("name", ""),
+		Enabled: utils.DefaultQueryBool(c, "enabled", true),
 	}
-	data, err := service.GetRoleList(role, pn, pSize)
+	data, err := service.GetRoleList(ids, role, pn, pSize)
 	if err != nil {
 		handler.InternalServerError(c, err)
 		return

@@ -126,6 +126,11 @@ func GetOrderList(order *models.Order, ids, customerStr, begTime, endTime string
 				}
 			}
 			data[v].OrderProduct = op
+			data[v].UnFinishPrice = data[v].TotalPrice - data[v].FinishPrice
+		}
+	} else {
+		for v, _ := range data {
+			data[v].UnFinishPrice = data[v].TotalPrice - data[v].FinishPrice
 		}
 	}
 
@@ -312,6 +317,7 @@ func UpdateOrder(order *models.Order) (*models.Order, error) {
 	order.OrderNumber = oldData.OrderNumber
 	order.TotalPrice = oldData.TotalPrice
 	order.FinishPrice = oldData.FinishPrice
+	order.UnFinishPrice = oldData.UnFinishPrice
 	order.Status = oldData.Status
 
 	return order, global.Db.Updates(&order).Error
@@ -353,7 +359,7 @@ func OutOfStock(orderId, orderProductId, userId int, username string) error {
 			tx.Commit()
 		}
 	}()
-	
+
 	surplusNum, err := DeductProductStock(tx, op.ProductId, op.Amount)
 	if err != nil {
 		return err
@@ -727,25 +733,25 @@ func ExportOrderExecl(order *models.Order, ids, customerStr, begTime, endTime st
 	)
 
 	keyList := []string{
-		"订单编号",     //"订单编号"
-		"客户名称",     //"客户名称"
-		"产品名称",     //"产品名称"
-		"产品规格",     //"产品规格"
-		"单价（元）",     //"单价（元）"
-		"数量",         //"数量"
+		"订单编号",    //"订单编号"
+		"客户名称",    //"客户名称"
+		"产品名称",    //"产品名称"
+		"产品规格",    //"产品规格"
+		"单价（元）",   //"单价（元）"
+		"数量",      //"数量"
 		"销售金额（元）", //"销售金额（元）"
-		"成本（元）",     //"成本（元）"
-		"利润（元）",     //"利润（元）"
-		"毛利率",       //"毛利率"
+		"成本（元）",   //"成本（元）"
+		"利润（元）",   //"利润（元）"
+		"毛利率",     //"毛利率"
 		"订单总额（元）", //"订单总额（元）"
 		"已结金额（元）", //"已结金额（元）"
 		"未结金额（元）", //"未结金额（元）"
-		"销售日期",     //"销售日期"
-		"订单状态",     //"订单状态"
-		"销售人员",     //"销售人员"
-		"备注",         //"备注"
-		"更新人员",     //"更新人员"
-		"更新时间",     //"更新时间"
+		"销售日期",    //"销售日期"
+		"订单状态",    //"订单状态"
+		"销售人员",    //"销售人员"
+		"备注",      //"备注"
+		"更新人员",    //"更新人员"
+		"更新时间",    //"更新时间"
 	}
 
 	var row int = 1 // 行数
